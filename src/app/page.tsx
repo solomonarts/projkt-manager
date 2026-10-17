@@ -2,35 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import {
-  Activity, ArrowRight, Bell, BriefcaseBusiness, Check, ChevronRight, CircleHelp,
-  Clock3, Command, FileBarChart2, FileText, Flag, FolderKanban, Globe2,
-  LayoutDashboard, ListTodo, MapPin, Plus, Search, ShieldCheck,
-  Target, Users, WalletCards, X,
+  Activity, ArrowRight, Bell, BriefcaseBusiness, Check, ChevronRight,
+  Clock3, Command, FileText, Globe2, MapPin, Plus, Search, ShieldCheck,
+  WalletCards, X,
 } from 'lucide-react';
-import { signOut } from './auth-actions';
 
 type Project = { name: string; code: string; location: string; status: string; progress: number|null; color: string; lead: string; due: string|null };
 type InboxNotification = { id: string; kind: string; title: string; body: string | null; entity_type: string | null; entity_id: string | null; read_at: string | null; created_at: string };
 type DashboardData = { profile:{name:string;role:string};permissions:Record<string,boolean>;metrics:{activeProjects:number|null;completedProjects:number|null;completedTasks:number|null;reportsToReview:number|null;indicatorProgress:number|null;activeRisks:number|null;evaluations:number|null;overdueTasks:number|null;upcomingTasks:number|null;postedJournalEntries:number|null};projects:Array<Project&{id:string}>;tasks:Array<{id:string;title:string;project:string;projectCode:string;dueDate:string|null;status:string;progress:number}>;recent:Array<{id:string;title:string;project:string;when:string;href:string;tone:string}>;errors:string[] };
 
-const navGroups = [
-    { label: 'WORKSPACE', items: [
-    { label: 'Overview', icon: LayoutDashboard, permission:'dashboard' }, { label: 'Projects', icon: FolderKanban, permission:'projects' },
-    { label: 'Tasks & Activities', icon: ListTodo, permission:'tasks' }, { label: 'Teams & Members', icon: Users, permission:'teams' },
-  ] },
-  { label: 'INSIGHTS', items: [
-    { label: 'Reports', icon: FileBarChart2, permission:'reports' }, { label: 'MEAL & Evaluation', icon: Target, permission:'meal' },
-    { label: 'Risks & Issues', icon: Flag, permission:'risks' },
-  ] },
-  { label: 'ORGANIZATION', items: [
-    { label: 'Accounting & Reporting', icon: WalletCards, permission:'accounting' }, { label: 'Documents', icon: FileText, permission:'documents' },
-    { label: 'Administration & Permissions', icon: ShieldCheck, permission:'administration' },
-  ] },
-];
-
 export default function Home() {
-  const [active, setActive] = useState('Overview');
-  const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
   const [dashboard, setDashboard] = useState<DashboardData|null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
@@ -65,23 +46,9 @@ export default function Home() {
   };
   const notificationHref = (item: InboxNotification) => item.entity_type === 'task' ? '/tasks' : item.entity_type === 'report' ? '/reports' : item.entity_type === 'risk' ? '/meal#risks' : item.entity_type === 'transaction' ? '/accounting' : item.kind === 'follow_up_assigned' ? '/meal#actions' : '/';
 
-  const notify = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 2800); };
-
   return <div className="app-shell">
-    <a className="skip-link" href="#main-content">Skip to content</a>
-    <aside className="sidebar" aria-label="Main navigation">
-      <a className="brand" href="/" aria-label="Fieldnote home"><span className="brand-icon"><span /><span /><span /><span /></span><span className="brand-name">fieldnote<span className="brand-dot">.</span></span></a>
-      <div className="org-switcher" aria-label="Organization workspace"><span className="org-mark">F</span><span className="org-copy"><b>Organization workspace</b><small>Management</small></span></div>
-      <div className="side-scroll">
-        {dashboard&&navGroups.map(group => {const items=group.items.filter(item=>dashboard.permissions[item.permission]);return items.length?<div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{items.map(({label,icon:Icon})=><a key={label} href={label==='Overview'?'/':label==='Projects'?'/projects':label==='Tasks & Activities'?'/tasks':label==='Teams & Members'?'/teams':label==='Reports'?'/reports':label==='Accounting & Reporting'?'/accounting':label==='Administration & Permissions'?'/admin':label==='Documents'?'/documents':'/meal'} aria-current={active===label?'page':undefined} className={`nav-item ${active===label?'selected':''}`}><Icon size={17} strokeWidth={1.8}/><span>{label}</span></a>)}</div>:null;})}
-      </div>
-      <div className="sidebar-bottom"><button className="nav-item" onClick={() => notify('Help center opened')}><CircleHelp size={17} /><span>Help & support</span></button>
-        <div className="profile-card"><span className="avatar avatar-profile">{dashboard?.profile.name.slice(0,2).toUpperCase()||'—'}</span><span className="profile-copy"><b>{dashboard?.profile.name||'Signed in user'}</b><small>{dashboard?.profile.role||'Organization member'}</small></span><form action={signOut}><button className="profile-signout" type="submit">Sign out</button></form></div>
-      </div>
-    </aside>
-
-    <main className="main-area" id="main-content">
-      <header className="topbar"><div className="breadcrumbs"><span>Workspace</span><ChevronRight size={14} /><b>{active}</b></div><div className="top-actions"><button className="search-trigger" onClick={() => document.getElementById('project-search')?.focus()}><Search size={15} /><span>Search projects...</span><kbd><Command size={11} /> K</kbd></button><span className="top-divider" /><div className="popover-wrap"><button className="icon-button bell-button" aria-label={`Notifications${notifications.some(n => !n.read_at) ? `, ${notifications.filter(n => !n.read_at).length} unread` : ''}`} aria-expanded={showNotifications} aria-controls="notifications-popover" onClick={() => setShowNotifications(!showNotifications)}><Bell size={18} />{notifications.some(n => !n.read_at) && <i />}</button>{showNotifications && <div className="popover notification-pop" id="notifications-popover" role="region" aria-label="Notifications"><div className="pop-head"><b>Notifications</b><button onClick={() => setShowNotifications(false)} aria-label="Close notifications"><X size={15} /></button></div>{notificationError&&<p role="status">{notificationError}</p>}{notifications.length ? <><ul className="notification-list">{notifications.map(item=><li key={item.id} className={item.read_at?'read':''}><a href={notificationHref(item)} onClick={async event=>{event.preventDefault();await markNotificationRead(item.id);window.location.assign(notificationHref(item));}}><span className="notification-dot" aria-hidden="true" /><span><b>{item.title}</b><small>{item.body||item.kind.replaceAll('_',' ')} · {new Date(item.created_at).toLocaleString()}</small></span></a></li>)}</ul>{notifications.some(n=>!n.read_at)&&<button className="notification-mark-all" onClick={async()=>{const response=await fetch('/api/notifications',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({all:true})});if(response.ok)setNotifications(items=>items.map(item=>({...item,read_at:new Date().toISOString()})));}}>Mark all as read</button>}</> : !notificationError&&<p role="status">No notifications yet.</p>}</div>}</div><span className="avatar avatar-top" aria-label={dashboard?.profile.name||'Signed in user'}>{dashboard?.profile.name.slice(0,2).toUpperCase()||'—'}</span></div></header>
+    <main className="main-area">
+      <header className="topbar"><div className="breadcrumbs"><span>Workspace</span><ChevronRight size={14} /><b>Overview</b></div><div className="top-actions"><button className="search-trigger" onClick={() => document.getElementById('project-search')?.focus()}><Search size={15} /><span>Search projects...</span><kbd><Command size={11} /> K</kbd></button><span className="top-divider" /><div className="popover-wrap"><button className="icon-button bell-button" aria-label={`Notifications${notifications.some(n => !n.read_at) ? `, ${notifications.filter(n => !n.read_at).length} unread` : ''}`} aria-expanded={showNotifications} aria-controls="notifications-popover" onClick={() => setShowNotifications(!showNotifications)}><Bell size={18} />{notifications.some(n => !n.read_at) && <i />}</button>{showNotifications && <div className="popover notification-pop" id="notifications-popover" role="region" aria-label="Notifications"><div className="pop-head"><b>Notifications</b><button onClick={() => setShowNotifications(false)} aria-label="Close notifications"><X size={15} /></button></div>{notificationError&&<p role="status">{notificationError}</p>}{notifications.length ? <><ul className="notification-list">{notifications.map(item=><li key={item.id} className={item.read_at?'read':''}><a href={notificationHref(item)} onClick={async event=>{event.preventDefault();await markNotificationRead(item.id);window.location.assign(notificationHref(item));}}><span className="notification-dot" aria-hidden="true" /><span><b>{item.title}</b><small>{item.body||item.kind.replaceAll('_',' ')} · {new Date(item.created_at).toLocaleString()}</small></span></a></li>)}</ul>{notifications.some(n=>!n.read_at)&&<button className="notification-mark-all" onClick={async()=>{const response=await fetch('/api/notifications',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({all:true})});if(response.ok)setNotifications(items=>items.map(item=>({...item,read_at:new Date().toISOString()})));}}>Mark all as read</button>}</> : !notificationError&&<p role="status">No notifications yet.</p>}</div>}</div><span className="avatar avatar-top" aria-label={dashboard?.profile.name||'Signed in user'}>{dashboard?.profile.name.slice(0,2).toUpperCase()||'—'}</span></div></header>
 
       <div className="content-wrap">
         <div className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-line" /> {new Date().toLocaleDateString('en-UG',{timeZone:'Africa/Kampala',weekday:'long',month:'long',day:'numeric',year:'numeric'}).toUpperCase()}</div><h1>Welcome, {dashboard?.profile.name||'there'} <span className="wave" aria-hidden="true">✳</span></h1><p className="welcome-sub">A view of the work your account is authorized to access.</p></div><div className="welcome-actions">{dashboard?.permissions.projectsCreate&&<a className="button button-primary" href="/projects#new-project"><Plus size={16} /> New project</a>}{dashboard?.permissions.accounting&&<a className="button button-secondary" href="/accounting"><WalletCards size={15}/> Accounting workspace</a>}</div></div>
@@ -111,10 +78,9 @@ export default function Home() {
 
           <div className="panel activity-panel"><div className="panel-head"><div><h2>Recent activity</h2><p>Recent visible task and report updates</p></div></div><div className="activity-list">{dashboard?.recent.map(item=><a className="activity-row" key={`${item.href}-${item.id}`} href={item.href}><span className={`activity-icon ${item.tone}`}><Activity size={14}/></span><span className="activity-copy"><span>{item.title}</span><small>{item.project} · {item.when}</small></span></a>)}{!dashboardLoading&&!dashboard?.recent.length&&<div className="empty-state">No recent activity is available.</div>}</div><a className="activity-footer" href="/reports">Open reports <ArrowRight size={14} /></a></div></div>
         </section>
-        <footer className="page-footer"><span>Fieldnote organization workspace</span><span><ShieldCheck size={13} /> Your data is protected</span><button className="page-footer-help" onClick={()=>notify('Help center opened')}>Need a hand?</button></footer>
+        <footer className="page-footer"><span>Fieldnote organization workspace</span><span><ShieldCheck size={13} /> Your data is protected</span></footer>
       </div>
     </main>
-    {notice && <div className="toast" role="status"><Check size={16} />{notice}<button onClick={() => setNotice('')} aria-label="Dismiss"><X size={14} /></button></div>}
   </div>;
 }
 

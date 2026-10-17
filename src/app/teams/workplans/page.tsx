@@ -27,7 +27,7 @@ export default async function TeamWorkplansPage() {
   const paths=[...templates.map(template=>template.storage_path),...plans.map(plan=>plan.upload_path)].filter((path):path is string=>Boolean(path));
   const signedEntries=await Promise.all([...new Set(paths)].map(async path=>{const {data}=await supabase.storage.from('team-workplans').createSignedUrl(path,60);return [path,data?.signedUrl??null] as const;}));
   const signedUrls=new Map(signedEntries);
-  return <div className="workspace-page"><header className="workspace-top"><Link href="/teams" className="workspace-back"><ArrowLeft size={16}/> Teams</Link><span>FIELDNOTE / TEAM WORKPLANS</span></header><main className="workspace-content">
+  return <div className="workspace-page"><header className="workspace-top"><span>FIELDNOTE / TEAM WORKPLANS</span></header><main className="workspace-content">
     <div className="workspace-heading"><div><span className="workspace-kicker">TEAM DELIVERY</span><h1>Workplans &amp; reporting</h1><p>Team specific templates, dual approval, scheduled progress reports and collective MEAL contributions.</p></div></div>
     {error&&<div className="workspace-message" role="status">{error}</div>}
     {authorizedTeams.length===0?<div className="workspace-empty"><Users size={24}/><b>No project teams are available</b><span>A project manager must assign a project to a team before a workplan can be submitted.</span></div>:<>

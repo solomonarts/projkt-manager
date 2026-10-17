@@ -16,7 +16,7 @@ export default async function ProjectsPage() {
     if (result.error) error = result.error.message;
   } catch { error = 'Sign in and configure Supabase to view organization projects.'; }
   return <div className="workspace-page">
-    <header className="workspace-top"><Link href="/" className="workspace-back"><ArrowLeft size={16}/> Overview</Link><span>FIELDNOTE / PROJECTS</span></header>
+    <header className="workspace-top"><span>FIELDNOTE / PROJECTS</span></header>
     <main className="workspace-content"><div className="workspace-heading"><div><span className="workspace-kicker">DELIVERY WORKSPACE</span><h1>Projects</h1><p>Plan and track your organization’s project portfolio.</p></div>{canCreate&&<a className="workspace-primary" href="#new-project"><Plus size={16}/> New project</a>}</div>
       {error&&<div className="workspace-message" role="status">{error}</div>}
       <section className="workspace-panel"><div className="workspace-panel-head"><div><h2>Project portfolio</h2><p>{projects.length} projects visible to your account</p></div><FolderKanban size={20}/></div>
