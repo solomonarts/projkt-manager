@@ -1,0 +1,17 @@
+[functions.invite-user]
+verify_jwt = true
+
+[functions.process-reporting-schedules]
+verify_jwt = false
+
+[functions.team-workflows]
+verify_jwt = true
+
+[functions.task-workflows]
+verify_jwt = true
+
+[functions.report-workflows]
+verify_jwt = true
+
+[functions.employee-auth]
+verify_jwt = false
