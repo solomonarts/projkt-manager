@@ -55,7 +55,7 @@ export async function updateSession(request: NextRequest) {
     destination.search = '';
     return NextResponse.redirect(destination);
   }
-  if (user && request.nextUrl.pathname === '/login') {
+  if (user && ['/login', '/signup'].includes(request.nextUrl.pathname)) {
     const destination = request.nextUrl.clone();
     destination.pathname = '/';
     destination.search = '';

@@ -313,3 +313,4 @@
     transition: none;
   }
 }
+.auth-notice{margin:0 0 14px;padding:10px 12px;border:1px solid #d9e9df;border-radius:8px;background:#f2f8f4;color:#426b50;font-size:12px;line-height:1.5}

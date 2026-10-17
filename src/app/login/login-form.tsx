@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import PasswordInput from '@/components/auth/password-input';
@@ -10,6 +10,11 @@ export default function LoginForm() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [administratorEmail, setAdministratorEmail] = useState(false);
+  const [idleNotice, setIdleNotice] = useState(false);
+
+  useEffect(() => {
+    setIdleNotice(new URLSearchParams(window.location.search).get('reason') === 'idle');
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,6 +44,7 @@ export default function LoginForm() {
       <p className="auth-kicker">ORGANIZATION WORKSPACE</p>
       <h1 id="login-title">Sign in</h1>
       <p className="auth-intro">Employees sign in with the 7-character ID issued by their administrator.</p>
+      {idleNotice && <p className="auth-notice" role="status">You were signed out after an hour without activity. Sign in to continue.</p>}
       <form onSubmit={submit} className="auth-form">
         <label>{administratorEmail ? 'Administrator email' : 'Employee ID'}<input name="user_id" type={administratorEmail ? 'email' : 'text'} autoComplete="username" autoCapitalize={administratorEmail ? undefined : 'characters'} minLength={administratorEmail ? undefined : 7} maxLength={administratorEmail ? 254 : 7} pattern={administratorEmail ? undefined : '[A-HJ-NP-Z2-9]{7}'} required autoFocus /></label>
         <label>Password<PasswordInput name="password" autoComplete="current-password" /></label>

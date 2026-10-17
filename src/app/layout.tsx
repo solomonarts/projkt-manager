@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import './auth-extras.css';
+import AppExperience from '@/components/app-experience';
 
 export const metadata: Metadata = {
   title: 'Fieldnote — Project intelligence',
@@ -8,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}</body></html>;
+  return <html lang="en"><body>{children}<AppExperience /></body></html>;
 }
