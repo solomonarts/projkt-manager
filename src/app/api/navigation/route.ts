@@ -12,6 +12,9 @@ const permissionKeys = {
   accounting: 'accounting.view',
   documents: 'documents.view',
   administration: 'system.manage',
+  taskReview: 'tasks.review',
+  reportReview: 'reports.review',
+  accountingApprove: 'accounting.approve',
 };
 
 export async function GET() {
@@ -27,15 +30,19 @@ export async function GET() {
     })),
   ]);
 
-  const { data: pendingRegistrations } = await supabase.from('employee_registration_requests').select('id')
-    .in('status', ['pending_team_approval','pending_project_approval','approved_pending_id','approved_pending_email']).limit(1);
   const permissions = Object.fromEntries(permissionResults);
-  permissions.registrationApprovals = Boolean(pendingRegistrations?.length);
+  const [registrations,reports,tasks,journals] = await Promise.all([
+    permissions.teams ? supabase.from('employee_registration_requests').select('id',{count:'exact',head:true}).in('status',['pending_assignment','pending_team_approval','pending_project_approval','approved_pending_id','approved_pending_email']) : Promise.resolve({count:0}),
+    permissions.reportReview ? supabase.from('reports').select('id',{count:'exact',head:true}).eq('status','submitted') : Promise.resolve({count:0}),
+    permissions.taskReview ? supabase.from('tasks').select('id',{count:'exact',head:true}).eq('status','pending_review') : Promise.resolve({count:0}),
+    permissions.accountingApprove ? supabase.from('journal_entries').select('id',{count:'exact',head:true}).eq('status','pending_approval') : Promise.resolve({count:0}),
+  ]);
   return NextResponse.json({
     profile: {
       name: profileResult.data?.full_name || user.email?.split('@')[0] || 'Member',
       role: profileResult.data?.job_title || 'Organization member',
     },
     permissions,
+    pendingCounts:{teams:registrations.count??0,reports:reports.count??0,tasks:tasks.count??0,accounting:journals.count??0},
   }, { headers: { 'Cache-Control': 'private, no-store' } });
 }

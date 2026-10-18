@@ -4,30 +4,30 @@ import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   FileBarChart2, FileText, Flag, FolderKanban, LayoutDashboard, ListTodo,
-  ShieldCheck, Target, Users, UserRoundCheck, WalletCards,
+  ShieldCheck, Target, Users, WalletCards,
 } from 'lucide-react';
 import { signOut } from '@/app/auth-actions';
 
 type NavigationData = {
   profile: { name: string; role: string };
   permissions: Record<string, boolean>;
+  pendingCounts?: Record<string, number>;
 };
 
 const groups = [
   { label: 'WORKSPACE', items: [
     { label: 'Overview', href: '/', icon: LayoutDashboard, permission: 'dashboard' },
     { label: 'Projects', href: '/projects', icon: FolderKanban, permission: 'projects' },
-    { label: 'Tasks & Activities', href: '/tasks', icon: ListTodo, permission: 'tasks' },
-    { label: 'Teams & Members', href: '/teams', icon: Users, permission: 'teams' },
+    { label: 'Tasks & Activities', href: '/tasks', icon: ListTodo, permission: 'tasks', pending: 'tasks' },
+    { label: 'Teams & Members', href: '/teams#registration-approvals', icon: Users, permission: 'teams', pending: 'teams' },
   ] },
   { label: 'INSIGHTS', items: [
-    { label: 'Reports', href: '/reports', icon: FileBarChart2, permission: 'reports' },
+    { label: 'Reports', href: '/reports', icon: FileBarChart2, permission: 'reports', pending: 'reports' },
     { label: 'MEAL & Evaluation', href: '/meal', icon: Target, permission: 'meal' },
     { label: 'Risks & Issues', href: '/meal#risks', icon: Flag, permission: 'risks' },
   ] },
   { label: 'ORGANIZATION', items: [
-    { label: 'Registration approvals', href: '/registration-approvals', icon: UserRoundCheck, permission: 'registrationApprovals' },
-    { label: 'Accounting & Reporting', href: '/accounting', icon: WalletCards, permission: 'accounting' },
+    { label: 'Accounting & Reporting', href: '/accounting', icon: WalletCards, permission: 'accounting', pending: 'accounting' },
     { label: 'Documents', href: '/documents', icon: FileText, permission: 'documents' },
     { label: 'Administration & Permissions', href: '/admin', icon: ShieldCheck, permission: 'administration' },
   ] },
@@ -50,7 +50,7 @@ export default function AppNavigationShell({ children }: { children: React.React
     }).then(data => { if (active) setNavigation(data); })
       .catch(() => { if (active) setNavigation(null); });
     return () => { active = false; };
-  }, [isAuthPage]);
+  }, [isAuthPage, pathname]);
 
   useEffect(() => {
     const updateHash = () => setHash(window.location.hash);
@@ -77,13 +77,14 @@ export default function AppNavigationShell({ children }: { children: React.React
           const items = group.items.filter(item => navigation?.permissions[item.permission]);
           return items.length ? <div className="nav-group" key={group.label}>
             <div className="nav-label">{group.label}</div>
-            {items.map(({ label, href, icon: Icon }) => {
+            {items.map(({ label, href, icon: Icon, pending }) => {
+              const pendingCount = pending ? navigation?.pendingCounts?.[pending] ?? 0 : 0;
               const targetPath = href.split('#')[0];
               const selected = targetPath === '/meal'
                 ? pathname === '/meal' && ((href.includes('#risks') && hash === '#risks') || (!href.includes('#') && hash !== '#risks'))
                 : pathname === targetPath || (targetPath !== '/' && pathname.startsWith(`${targetPath}/`));
-              return <a key={label} href={href} title={label} aria-label={label} aria-current={selected ? 'page' : undefined} className={`nav-item ${selected ? 'selected' : ''}`}>
-                <Icon size={17} strokeWidth={1.8}/><span>{label}</span>
+              return <a key={label} href={href} title={pendingCount ? `${label}: ${pendingCount} pending actions` : label} aria-label={pendingCount ? `${label}, ${pendingCount} pending actions` : label} aria-current={selected ? 'page' : undefined} className={`nav-item ${selected ? 'selected' : ''}`}>
+                <Icon size={17} strokeWidth={1.8}/><span>{label}</span>{pendingCount > 0 && <small className="nav-badge" aria-hidden="true">{pendingCount > 99 ? '99+' : pendingCount}</small>}
               </a>;
             })}
           </div> : null;

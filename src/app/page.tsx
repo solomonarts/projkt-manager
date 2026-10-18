@@ -3,13 +3,13 @@
 import { useEffect, useState } from 'react';
 import {
   Activity, ArrowRight, Bell, BriefcaseBusiness, Check, ChevronRight,
-  Clock3, Command, FileText, Globe2, MapPin, Plus, Search, ShieldCheck,
+  Clock3, Command, FileText, Globe2, MapPin, Plus, Search, ShieldCheck, ListTodo,
   WalletCards, X,
 } from 'lucide-react';
 
 type Project = { name: string; code: string; location: string; status: string; progress: number|null; color: string; lead: string; due: string|null };
 type InboxNotification = { id: string; kind: string; title: string; body: string | null; entity_type: string | null; entity_id: string | null; read_at: string | null; created_at: string };
-type DashboardData = { profile:{name:string;role:string};permissions:Record<string,boolean>;metrics:{activeProjects:number|null;completedProjects:number|null;completedTasks:number|null;reportsToReview:number|null;indicatorProgress:number|null;activeRisks:number|null;evaluations:number|null;overdueTasks:number|null;upcomingTasks:number|null;postedJournalEntries:number|null};projects:Array<Project&{id:string}>;tasks:Array<{id:string;title:string;project:string;projectCode:string;dueDate:string|null;status:string;progress:number}>;recent:Array<{id:string;title:string;project:string;when:string;href:string;tone:string}>;errors:string[] };
+type DashboardData = { profile:{name:string;role:string};permissions:Record<string,boolean>;metrics:{activeProjects:number|null;completedProjects:number|null;completedTasks:number|null;reportsToReview:number|null;indicatorProgress:number|null;activeRisks:number|null;evaluations:number|null;overdueTasks:number|null;upcomingTasks:number|null;postedJournalEntries:number|null};pendingActions:Array<{key:string;label:string;detail:string;count:number;href:string}>;projects:Array<Project&{id:string}>;tasks:Array<{id:string;title:string;project:string;projectCode:string;dueDate:string|null;status:string;progress:number}>;recent:Array<{id:string;title:string;project:string;when:string;href:string;tone:string}>;errors:string[] };
 
 export default function Home() {
   const [query, setQuery] = useState('');
@@ -62,6 +62,13 @@ export default function Home() {
           <Metric title="Overdue tasks" value={dashboardLoading||!dashboard?'—':metricText(dashboard.metrics.overdueTasks)} detail={`${dashboard?metricText(dashboard.metrics.upcomingTasks):'—'} due in the next 7 days`} icon={<Clock3 size={17}/>} iconTone="peach"/>
           <Metric title="Reports awaiting review" value={dashboardLoading||!dashboard?'—':metricText(dashboard.metrics.reportsToReview)} detail="Visible submitted reports" icon={<FileText size={17}/>} iconTone="blue"/>
           {dashboard?.permissions.accounting&&<Metric title="Posted journal entries" value={dashboardLoading?'—':metricText(dashboard.metrics.postedJournalEntries)} detail="Authorized financial activity · open workspace" icon={<WalletCards size={17}/>} iconTone="mint"/>}
+        </section>
+
+        <section className="panel dashboard-pending-panel" aria-labelledby="pending-actions-heading">
+          <div className="panel-head"><div><h2 id="pending-actions-heading">Pending actions</h2><p>Work that needs a decision or follow-up in your authorized areas</p></div><Bell size={18}/></div>
+          {dashboardLoading ? <div className="workspace-empty compact" role="status">Checking for pending actions…</div>
+            : dashboard?.pendingActions.length ? <ul className="dashboard-pending-list">{dashboard.pendingActions.map(action=><li key={action.key}><a href={action.href}><span className="dashboard-pending-icon">{action.key==='tasks'?<ListTodo size={17}/>:action.key==='accounting'?<WalletCards size={17}/>:action.key==='reports'?<FileText size={17}/>:<ShieldCheck size={17}/>}</span><span><b>{action.label}</b><small>{action.detail}</small></span><strong>{action.count}</strong><ArrowRight size={15}/></a></li>)}</ul>
+            : <div className="workspace-empty compact"><b>No pending actions</b><span>New reviews and approvals will appear here.</span></div>}
         </section>
 
         <section className="overview-grid">

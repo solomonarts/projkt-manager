@@ -9,7 +9,7 @@ const permissionKeys = {
   projects:'projects.view', projectsCreate:'projects.create', tasks:'tasks.view', teams:'teams.view',
   reports:'reports.view', reportsCreate:'reports.create', meal:'evaluations.view', indicators:'indicators.view',
   risks:'projects.view', accounting:'accounting.view', documents:'documents.view', documentsCreate:'documents.create',
-  administration:'system.manage', dashboard:'dashboard.view', reportReview:'reports.review',
+  administration:'system.manage', dashboard:'dashboard.view', reportReview:'reports.review', taskReview:'tasks.review', accountingApprove:'accounting.approve',
 };
 
 export async function GET() {
@@ -33,7 +33,7 @@ async function loadDashboard() {
   const today=`${dateParts.year}-${dateParts.month}-${dateParts.day}`;
   const weekEndDate=new Date(`${today}T00:00:00Z`);weekEndDate.setUTCDate(weekEndDate.getUTCDate()+7);
   const weekEnd=weekEndDate.toISOString().slice(0,10);
-  const [profileResult, projectsResult, tasksResult, recentTasksResult, assignmentResult, reportsResult, activeRiskCount, evaluationCount, activeProjectCount, completedProjectCount, completedTaskCount, submittedReportCount, overdueTaskCount, upcomingTaskCount, postedJournalCount] = await Promise.all([
+  const [profileResult, projectsResult, tasksResult, recentTasksResult, assignmentResult, reportsResult, activeRiskCount, evaluationCount, activeProjectCount, completedProjectCount, completedTaskCount, submittedReportCount, overdueTaskCount, upcomingTaskCount, postedJournalCount, registrationCount, taskReviewCount, journalApprovalCount] = await Promise.all([
     supabase.from('profiles').select('full_name,job_title').eq('id',user.id).maybeSingle(),
     supabase.from('projects').select('id,code,name,location,status,end_date,manager_id').order('updated_at',{ascending:false}).limit(100),
     supabase.from('tasks').select('id,title,status,progress,due_date,updated_at,project_id,projects(name,code)').order('due_date',{ascending:true}).limit(1000),
@@ -49,6 +49,9 @@ async function loadDashboard() {
     supabase.from('tasks').select('id',{count:'exact',head:true}).lt('due_date',today).not('status','in','("completed","approved","cancelled")'),
     supabase.from('tasks').select('id',{count:'exact',head:true}).gte('due_date',today).lte('due_date',weekEnd).not('status','in','("completed","approved","cancelled")'),
     permissions.accounting ? supabase.from('journal_entries').select('id',{count:'exact',head:true}).eq('status','posted') : Promise.resolve({count:null,error:null}),
+    supabase.from('employee_registration_requests').select('id',{count:'exact',head:true}).in('status',['pending_assignment','pending_team_approval','pending_project_approval','approved_pending_id','approved_pending_email']),
+    permissions.taskReview ? supabase.from('tasks').select('id',{count:'exact',head:true}).eq('status','pending_review') : Promise.resolve({count:0,error:null}),
+    permissions.accountingApprove ? supabase.from('journal_entries').select('id',{count:'exact',head:true}).eq('status','pending_approval') : Promise.resolve({count:0,error:null}),
   ]);
   const firstError = [profileResult,projectsResult,tasksResult,recentTasksResult,assignmentResult,reportsResult,activeRiskCount,evaluationCount,activeProjectCount,completedProjectCount,completedTaskCount,submittedReportCount,overdueTaskCount,upcomingTaskCount].find(result=>result.error);
   const projectRows=(projectsResult.data??[]) as ProjectRow[];
@@ -77,6 +80,13 @@ async function loadDashboard() {
     profile:{name:profileResult.data?.full_name||user.email?.split('@')[0]||'Member',role:profileResult.data?.job_title||'Organization member'},
     permissions:{...permissions,projects:permissions.projects||projects.length>0,tasks:permissions.tasks||taskRows.length>0,reports:permissions.reports||reportRows.length>0,documents:permissions.documents||permissions.documentsCreate,meal:permissions.meal||permissions.indicators||permissions.risks},
     metrics:{activeProjects:activeProjectCount.error?null:activeProjectCount.count??0,completedProjects:completedProjectCount.error?null:completedProjectCount.count??0,completedTasks:completedTaskCount.error?null:completedTaskCount.count??0,reportsToReview:submittedReportCount.error?null:submittedReportCount.count??0,activeRisks:activeRiskCount.error?null:activeRiskCount.count??0,evaluations:evaluationCount.error?null:evaluationCount.count??0,overdueTasks:overdueTaskCount.error?null:overdueTaskCount.count??0,upcomingTasks:upcomingTaskCount.error?null:upcomingTaskCount.count??0,postedJournalEntries:permissions.accounting?(postedJournalCount.error?null:postedJournalCount.count??0):null},
+    pendingActions:[
+      ...(permissions.teams&&registrationCount.count? [{key:'registrations',label:'Employee registrations',detail:'Approval or onboarding action required',count:registrationCount.count,href:'/teams#registration-approvals'}]:[]),
+      ...(permissions.reportReview&&submittedReportCount.count? [{key:'reports',label:'Submitted reports',detail:'Review and approve team submissions',count:submittedReportCount.count,href:'/reports'}]:[]),
+      ...(permissions.taskReview&&taskReviewCount.count? [{key:'tasks',label:'Tasks pending review',detail:'Review completed work from assignees',count:taskReviewCount.count,href:'/tasks'}]:[]),
+      ...(permissions.accountingApprove&&journalApprovalCount.count? [{key:'accounting',label:'Journal entries',detail:'Pending finance approval',count:journalApprovalCount.count,href:'/accounting'}]:[]),
+    ],
+    pendingCounts:{registrations:registrationCount.count??0,reports:submittedReportCount.count??0,tasks:taskReviewCount.count??0,accounting:journalApprovalCount.count??0},
     projects,tasks,recent,errors:firstError?['Some dashboard records could not be loaded. Refresh or contact an administrator.']:[],
   });
 }
