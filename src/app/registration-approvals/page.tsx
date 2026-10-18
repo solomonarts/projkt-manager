@@ -19,9 +19,11 @@ type RegistrationRequest = {
   teams: Relation;
   projects: Relation;
 };
+type AssignableTeam = { id: string; name: string; project_id: string; project_name: string; project_code: string };
 
 const relation = (value: Relation) => Array.isArray(value) ? value[0] : value;
 const statusText: Record<string, string> = {
+  pending_assignment: 'Awaiting team assignment',
   pending_team_approval: 'Awaiting team lead',
   pending_project_approval: 'Awaiting project manager',
   approved_pending_id: 'Approved · ID not sent',
@@ -35,6 +37,8 @@ export default function RegistrationApprovalsPage() {
   const [notice, setNotice] = useState('');
   const [busyId, setBusyId] = useState('');
   const [comments, setComments] = useState<Record<string, string>>({});
+  const [teams, setTeams] = useState<AssignableTeam[]>([]);
+  const [selectedTeams, setSelectedTeams] = useState<Record<string, string>>({});
 
   const loadRequests = useCallback(async () => {
     setLoading(true);
@@ -50,6 +54,23 @@ export default function RegistrationApprovalsPage() {
   }, []);
 
   useEffect(() => { void loadRequests(); }, [loadRequests]);
+
+  useEffect(() => {
+    createClient().functions.invoke('employee-auth', { body: { action: 'registration_options' } })
+      .then(({ data }) => { if (Array.isArray(data?.teams)) setTeams(data.teams as AssignableTeam[]); });
+  }, []);
+
+  async function assign(item: RegistrationRequest) {
+    const team = teams.find(candidate => candidate.id === selectedTeams[item.id]);
+    if (!team) { setError('Choose a team and project for this applicant.'); return; }
+    setBusyId(item.id); setError(''); setNotice('');
+    const { data, error: invokeError } = await createClient().functions.invoke('employee-auth', {
+      body: { action: 'assign_registration', request_id: item.id, team_id: team.id, project_id: team.project_id },
+    });
+    if (invokeError || data?.error) setError(data?.error ?? 'The team assignment could not be saved.');
+    else setNotice(data?.message ?? 'Team assigned.');
+    await loadRequests(); setBusyId('');
+  }
 
   async function decide(item: RegistrationRequest, stage: 'team' | 'project', decision: 'approve' | 'reject') {
     setBusyId(item.id); setError(''); setNotice('');
@@ -76,7 +97,7 @@ export default function RegistrationApprovalsPage() {
 
   return <div className="workspace-page"><header className="workspace-top"><span>FIELDNOTE / REGISTRATION APPROVALS</span></header>
     <main className="workspace-content registration-approval-page">
-      <div className="workspace-heading"><div><span className="workspace-kicker">EMPLOYEE ONBOARDING</span><h1>Registration approvals</h1><p>Applications require approval from the team lead and the selected project manager. Employee IDs are created and emailed after both approvals.</p></div><UserRoundCheck size={22}/></div>
+      <div className="workspace-heading"><div><span className="workspace-kicker">EMPLOYEE ONBOARDING</span><h1>Registration approvals</h1><p>Applications without a selected team appear for authorized team leads and project managers to assign. Applications require team lead and project manager approval before employee IDs are issued.</p></div><UserRoundCheck size={22}/></div>
       {error && <div className="workspace-message" role="alert">{error}</div>}
       {notice && <div className="workspace-message registration-notice" role="status">{notice}</div>}
       <section className="registration-request-list" aria-label="Registration requests" aria-busy={loading}>
@@ -86,10 +107,12 @@ export default function RegistrationApprovalsPage() {
             const project = relation(item.projects);
             const pendingTeam = item.status === 'pending_team_approval';
             const pendingProject = item.status === 'pending_project_approval';
+            const pendingAssignment = item.status === 'pending_assignment';
             const pendingEmail = ['approved_pending_id', 'approved_pending_email'].includes(item.status);
             return <article className="workspace-panel registration-request" key={item.id}>
               <div className="registration-request-head"><div><h2>{item.full_name}</h2><p>{item.email}</p></div><span className={`workspace-status ${item.status.includes('pending') ? 'open' : 'approved'}`}>{statusText[item.status] ?? item.status}</span></div>
-              <dl className="registration-facts"><div><dt>Team</dt><dd>{team?.name ?? 'Team'}</dd></div><div><dt>Project</dt><dd>{project ? `${project.code ? `${project.code} · ` : ''}${project.name}` : 'Project'}</dd></div><div><dt>Applied</dt><dd>{new Date(item.created_at).toLocaleDateString('en-UG', { timeZone: 'Africa/Kampala', year: 'numeric', month: 'short', day: 'numeric' })}</dd></div></dl>
+              <dl className="registration-facts"><div><dt>Team</dt><dd>{team?.name ?? 'Not assigned'}</dd></div><div><dt>Project</dt><dd>{project ? `${project.code ? `${project.code} · ` : ''}${project.name}` : 'Not assigned'}</dd></div><div><dt>Applied</dt><dd>{new Date(item.created_at).toLocaleDateString('en-UG', { timeZone: 'Africa/Kampala', year: 'numeric', month: 'short', day: 'numeric' })}</dd></div></dl>
+              {pendingAssignment && <div className="registration-review-controls"><label>Assign team and project<select value={selectedTeams[item.id] ?? ''} onChange={event => setSelectedTeams(current => ({ ...current, [item.id]: event.target.value }))}><option value="">Select a team</option>{teams.map(option => <option key={option.id} value={option.id}>{option.name} · {option.project_code} {option.project_name}</option>)}</select></label><button className="workspace-primary" disabled={busyId === item.id || !selectedTeams[item.id]} onClick={() => void assign(item)}>{busyId === item.id ? 'Assigning…' : 'Assign team'}</button></div>}
               {(item.team_review_comment || item.project_review_comment) && <div className="registration-review-history">{item.team_review_comment && <p><b>Team review:</b> {item.team_review_comment}</p>}{item.project_review_comment && <p><b>Project review:</b> {item.project_review_comment}</p>}</div>}
               {(pendingTeam || pendingProject) && <div className="registration-review-controls">
                 <label>Review note<textarea value={comments[item.id] ?? ''} onChange={event => setComments(current => ({ ...current, [item.id]: event.target.value }))} rows={2} maxLength={800} placeholder="Optional approval note; explain a rejection." /></label>

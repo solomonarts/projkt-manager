@@ -36,6 +36,7 @@ Deno.serve(async (request) => {
       case 'reset_password': return await resetPassword(body, publicAuth, admin);
       case 'list_registration_requests': return await listRegistrationRequests(request, url, anonKey, admin);
       case 'review_registration': return await reviewRegistration(request, body, url, anonKey, admin);
+      case 'assign_registration': return await assignRegistration(request, body, url, anonKey, admin);
       case 'issue_approved_employee_id': return await issueApprovedEmployeeId(request, body, url, anonKey, admin);
       default: return json({ error: 'Unknown authentication action.' }, 400);
     }
@@ -139,17 +140,20 @@ async function register(body: Record<string, unknown>, admin: SupabaseClient) {
   const teamId = typeof body.team_id === 'string' ? body.team_id : '';
   const projectId = typeof body.project_id === 'string' ? body.project_id : '';
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const hasTeam = Boolean(teamId);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || !fullName || fullName.length > 160 ||
-      password.length < 10 || password.length > 128 || !uuidPattern.test(teamId) || !uuidPattern.test(projectId)) {
-    return json({ error: 'Enter your name, a valid email, a password of at least 10 characters, and select a team.' }, 400);
+      password.length < 10 || password.length > 128 || (hasTeam && (!uuidPattern.test(teamId) || !uuidPattern.test(projectId))) || (!hasTeam && Boolean(projectId))) {
+    return json({ error: 'Enter your name, a valid email, and a password of at least 10 characters. If selecting a team, choose a valid team and project.' }, 400);
   }
 
-  const { data: team, error: teamError } = await admin.from('teams').select('id,default_project_id').eq('id', teamId).maybeSingle();
-  if (teamError) return json({ error: 'The selected team could not be verified.' }, 503);
-  if (!team || team.default_project_id !== projectId) return json({ error: 'Select a team with an available project.' }, 400);
-  const { data: project, error: projectError } = await admin.from('projects').select('id,status').eq('id', projectId).maybeSingle();
-  if (projectError || !project) return json({ error: 'The selected project could not be verified.' }, 400);
-  if (!['planning', 'active'].includes(project.status)) return json({ error: 'Applications are only open for planning or active projects.' }, 400);
+  if (hasTeam) {
+    const { data: team, error: teamError } = await admin.from('teams').select('id,default_project_id').eq('id', teamId).maybeSingle();
+    if (teamError) return json({ error: 'The selected team could not be verified.' }, 503);
+    if (!team || team.default_project_id !== projectId) return json({ error: 'Select a team with an available project.' }, 400);
+    const { data: project, error: projectError } = await admin.from('projects').select('id,status').eq('id', projectId).maybeSingle();
+    if (projectError || !project) return json({ error: 'The selected project could not be verified.' }, 400);
+    if (!['planning', 'active'].includes(project.status)) return json({ error: 'Applications are only open for planning or active projects.' }, 400);
+  }
 
   const { data: existingApplication, error: existingApplicationError } = await admin.from('employee_registration_requests')
     .select('id,status').eq('email', email).neq('status', 'rejected').maybeSingle();
@@ -179,7 +183,8 @@ async function register(body: Record<string, unknown>, admin: SupabaseClient) {
   }
 
   const { error: requestError } = await admin.from('employee_registration_requests').insert({
-    user_id: authResult.user.id, email, full_name: fullName, team_id: teamId, project_id: projectId,
+    user_id: authResult.user.id, email, full_name: fullName, team_id: hasTeam ? teamId : null, project_id: hasTeam ? projectId : null,
+    status: hasTeam ? 'pending_team_approval' : 'pending_assignment',
   });
   if (requestError) {
     await admin.auth.admin.deleteUser(authResult.user.id);
@@ -187,7 +192,7 @@ async function register(body: Record<string, unknown>, admin: SupabaseClient) {
     console.error('Registration request creation failed', requestError.message);
     return json({ error: 'Could not submit the registration request. Try again later.' }, 500);
   }
-  return json({ registered: true, status: 'pending_team_approval' }, 201);
+  return json({ registered: true, status: hasTeam ? 'pending_team_approval' : 'pending_assignment' }, 201);
 }
 
 async function getCaller(request: Request, url: string, anonKey: string) {
@@ -229,13 +234,36 @@ async function listRegistrationRequests(request: Request, url: string, anonKey: 
   if (teamError || projectError) return json({ error: 'Registration requests could not be loaded.' }, 503);
   const teamIds = new Set((teamMemberships ?? []).map((item: { team_id: string }) => item.team_id));
   const projectIds = new Set((managedProjects ?? []).map((item: { id: string }) => item.id));
+  const hasManagerRole = Boolean((teamMemberships?.length ?? 0) || (managedProjects?.length ?? 0));
   const { data, error } = await admin.from('employee_registration_requests')
     .select('id,email,full_name,team_id,project_id,status,team_decision,team_review_comment,team_reviewed_at,project_decision,project_review_comment,project_reviewed_at,employee_id,created_at,teams(name),projects(name,code)')
-    .in('status', ['pending_team_approval','pending_project_approval','approved_pending_id','approved_pending_email'])
+    .in('status', ['pending_assignment','pending_team_approval','pending_project_approval','approved_pending_id','approved_pending_email'])
     .order('created_at', { ascending: true }).limit(200);
   if (error) return json({ error: 'Registration requests could not be loaded.' }, 503);
-  const requests = (data ?? []).filter((item: Record<string, unknown>) => superAdmin || teamIds.has(String(item.team_id)) || projectIds.has(String(item.project_id)));
+  const requests = (data ?? []).filter((item: Record<string, unknown>) => superAdmin ||
+    (item.status === 'pending_assignment' && hasManagerRole) || teamIds.has(String(item.team_id)) || projectIds.has(String(item.project_id)));
   return json({ requests });
+}
+
+async function assignRegistration(request: Request, body: Record<string, unknown>, url: string, anonKey: string, admin: SupabaseClient) {
+  const context = await getCaller(request, url, anonKey);
+  if (!context) return json({ error: 'Sign in to assign this registration.' }, 401);
+  const requestId = typeof body.request_id === 'string' ? body.request_id : '';
+  const teamId = typeof body.team_id === 'string' ? body.team_id : '';
+  const projectId = typeof body.project_id === 'string' ? body.project_id : '';
+  if (!requestId || !/^[0-9a-f-]{36}$/i.test(teamId) || !/^[0-9a-f-]{36}$/i.test(projectId)) return json({ error: 'Choose an available team and project.' }, 400);
+  const { data: registration, error } = await admin.from('employee_registration_requests').select('id,status').eq('id', requestId).maybeSingle();
+  if (error || !registration) return json({ error: 'Registration request not found.' }, 404);
+  if (registration.status !== 'pending_assignment') return json({ error: 'This registration has already been assigned.' }, 409);
+  const { data: team } = await admin.from('teams').select('id,default_project_id').eq('id', teamId).maybeSingle();
+  const { data: project } = await admin.from('projects').select('id,status').eq('id', projectId).maybeSingle();
+  if (!team || team.default_project_id !== projectId || !project || !['planning','active'].includes(project.status)) return json({ error: 'Choose a team and its available project.' }, 400);
+  const authorized = await hasSystemManage(context.caller) || await isTeamLead(admin, context.user.id, teamId) || await isProjectManager(admin, context.user.id, projectId);
+  if (!authorized) return json({ error: 'Only the selected team lead or project manager can assign this registration.' }, 403);
+  const { data: updated, error: updateError } = await admin.from('employee_registration_requests').update({ team_id: teamId, project_id: projectId, status: 'pending_team_approval' })
+    .eq('id', requestId).eq('status', 'pending_assignment').select('id').maybeSingle();
+  if (updateError || !updated) return json({ error: 'Assignment could not be saved. Refresh and try again.' }, 409);
+  return json({ assigned: true, status: 'pending_team_approval', message: 'Team and project assigned. The team lead must now review this application.' });
 }
 
 async function reviewRegistration(request: Request, body: Record<string, unknown>, url: string, anonKey: string, admin: SupabaseClient) {
@@ -251,8 +279,8 @@ async function reviewRegistration(request: Request, body: Record<string, unknown
   if (requestError || !registration) return json({ error: 'Registration request not found.' }, 404);
   const superAdmin = await hasSystemManage(context.caller);
   const authorized = superAdmin || (stage === 'team'
-    ? await isTeamLead(admin, context.user.id, registration.team_id)
-    : await isProjectManager(admin, context.user.id, registration.project_id));
+    ? Boolean(registration.team_id && await isTeamLead(admin, context.user.id, registration.team_id))
+    : Boolean(registration.project_id && await isProjectManager(admin, context.user.id, registration.project_id)));
   if (!authorized) return json({ error: 'You are not authorized to approve this registration at this stage.' }, 403);
 
   const expectedStatus = stage === 'team' ? 'pending_team_approval' : 'pending_project_approval';
@@ -287,7 +315,7 @@ async function issueApprovedEmployeeId(request: Request, body: Record<string, un
   const { data: registration, error } = await admin.from('employee_registration_requests').select('*').eq('id', requestId).maybeSingle();
   if (error || !registration) return json({ error: 'Registration request not found.' }, 404);
   const superAdmin = await hasSystemManage(context.caller);
-  const canReview = superAdmin || await isTeamLead(admin, context.user.id, registration.team_id) || await isProjectManager(admin, context.user.id, registration.project_id);
+  const canReview = superAdmin || (registration.team_id && await isTeamLead(admin, context.user.id, registration.team_id)) || (registration.project_id && await isProjectManager(admin, context.user.id, registration.project_id));
   if (!canReview) return json({ error: 'You are not authorized to issue this employee ID.' }, 403);
   if (!['approved_pending_id', 'approved_pending_email'].includes(registration.status) ||
       registration.team_decision !== 'approved' || registration.project_decision !== 'approved') {
@@ -299,6 +327,9 @@ async function issueApprovedEmployeeId(request: Request, body: Record<string, un
 }
 
 async function finalizeAndEmailEmployeeId(registration: Record<string, any>, actorId: string, admin: SupabaseClient): Promise<{ error?: string }> {
+  if (!registration.team_id || !registration.project_id || registration.team_decision !== 'approved' || registration.project_decision !== 'approved') {
+    return { error: 'Assign a team and project, then record both approvals before issuing an employee ID.' };
+  }
   const resendKey = Deno.env.get('RESEND_API_KEY');
   const emailFrom = Deno.env.get('EMPLOYEE_ID_EMAIL_FROM');
   if (!resendKey || !emailFrom) return { error: 'Both approvals are saved. Configure RESEND_API_KEY and EMPLOYEE_ID_EMAIL_FROM before issuing the employee ID.' };
