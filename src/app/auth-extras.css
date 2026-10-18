@@ -112,7 +112,8 @@
   font-weight: 600;
 }
 
-.auth-form input {
+.auth-form input,
+.auth-form select {
   height: 44px;
   border-color: #e8e6ed;
   border-radius: 7px;
@@ -120,11 +121,13 @@
   transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
 }
 
-.auth-form input:hover {
+.auth-form input:hover,
+.auth-form select:hover {
   border-color: #d8d3e8;
 }
 
-.auth-form input:focus-visible {
+.auth-form input:focus-visible,
+.auth-form select:focus-visible {
   border-color: #9888cf;
   outline: 0;
   background: #fff;

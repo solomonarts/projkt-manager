@@ -51,7 +51,7 @@ export default function LoginForm() {
         {error && <p className="auth-error" role="alert">{error}</p>}
         <button type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Continue securely'}</button>
       </form>
-      <nav className="auth-links" aria-label="Account options"><a href="/reset-password">Forgot password?</a><a href="/signup">Register with an employee ID</a></nav>
+      <nav className="auth-links" aria-label="Account options"><a href="/reset-password">Forgot password?</a><a href="/signup">Apply for an employee account</a></nav>
       <button type="button" className="auth-mode-toggle" onClick={() => { setAdministratorEmail(!administratorEmail); setError(''); }}>{administratorEmail ? 'Use employee ID' : 'Administrator first-time setup'}</button>
     </section>
   </main>;

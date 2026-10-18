@@ -27,11 +27,15 @@ export async function GET() {
     })),
   ]);
 
+  const { data: pendingRegistrations } = await supabase.from('employee_registration_requests').select('id')
+    .in('status', ['pending_team_approval','pending_project_approval','approved_pending_id','approved_pending_email']).limit(1);
+  const permissions = Object.fromEntries(permissionResults);
+  permissions.registrationApprovals = Boolean(pendingRegistrations?.length);
   return NextResponse.json({
     profile: {
       name: profileResult.data?.full_name || user.email?.split('@')[0] || 'Member',
       role: profileResult.data?.job_title || 'Organization member',
     },
-    permissions: Object.fromEntries(permissionResults),
+    permissions,
   }, { headers: { 'Cache-Control': 'private, no-store' } });
 }

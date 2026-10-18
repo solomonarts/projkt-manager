@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   FileBarChart2, FileText, Flag, FolderKanban, LayoutDashboard, ListTodo,
-  ShieldCheck, Target, Users, WalletCards,
+  ShieldCheck, Target, Users, UserRoundCheck, WalletCards,
 } from 'lucide-react';
 import { signOut } from '@/app/auth-actions';
 
@@ -26,6 +26,7 @@ const groups = [
     { label: 'Risks & Issues', href: '/meal#risks', icon: Flag, permission: 'risks' },
   ] },
   { label: 'ORGANIZATION', items: [
+    { label: 'Registration approvals', href: '/registration-approvals', icon: UserRoundCheck, permission: 'registrationApprovals' },
     { label: 'Accounting & Reporting', href: '/accounting', icon: WalletCards, permission: 'accounting' },
     { label: 'Documents', href: '/documents', icon: FileText, permission: 'documents' },
     { label: 'Administration & Permissions', href: '/admin', icon: ShieldCheck, permission: 'administration' },

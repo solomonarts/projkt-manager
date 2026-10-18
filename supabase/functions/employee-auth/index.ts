@@ -30,9 +30,13 @@ Deno.serve(async (request) => {
   try {
     switch (body.action) {
       case 'issue_id': return await issueId(request, body, url, anonKey, admin);
-      case 'register': return await register(body, publicAuth, admin);
+      case 'registration_options': return await registrationOptions(admin);
+      case 'register': return await register(body, admin);
       case 'login': return await login(body, publicAuth, admin);
       case 'reset_password': return await resetPassword(body, publicAuth, admin);
+      case 'list_registration_requests': return await listRegistrationRequests(request, url, anonKey, admin);
+      case 'review_registration': return await reviewRegistration(request, body, url, anonKey, admin);
+      case 'issue_approved_employee_id': return await issueApprovedEmployeeId(request, body, url, anonKey, admin);
       default: return json({ error: 'Unknown authentication action.' }, 400);
     }
   } catch (error) {
@@ -110,49 +114,287 @@ async function issueId(request: Request, body: Record<string, unknown>, url: str
   return json({ error: 'Could not generate a unique employee ID. Try again.' }, 503);
 }
 
-async function register(body: Record<string, unknown>, publicAuth: SupabaseClient, admin: SupabaseClient) {
-  const userId = normalizeId(body.user_id);
-  const password = typeof body.password === 'string' ? body.password : '';
-  if (!idPattern.test(userId) || password.length < 10 || password.length > 128) {
-    return json({ error: 'Enter a valid employee ID and a password with at least 10 characters.' }, 400);
-  }
-
-  // Release a stale reservation if a prior signup request was interrupted.
-  const expiredAt = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-  await admin.from('employee_registration_codes').update({ status: 'issued', reserved_at: null })
-    .eq('user_id', userId).eq('status', 'reserved').lt('reserved_at', expiredAt);
-  const { data: code, error: reserveError } = await admin.from('employee_registration_codes')
-    .update({ status: 'reserved', reserved_at: new Date().toISOString() })
-    .eq('user_id', userId).eq('status', 'issued')
-    .select('user_id,email,full_name,role_id').maybeSingle();
-  if (reserveError || !code) return json({ error: 'This employee ID is invalid, already used, or unavailable.' }, 400);
-
-  const { data, error } = await admin.auth.admin.createUser({
-    email: code.email,
-    password,
-    email_confirm: true,
-    user_metadata: { full_name: code.full_name },
+async function registrationOptions(admin: SupabaseClient) {
+  const { data, error } = await admin.from('teams')
+    .select('id,name,default_project_id,projects:projects!teams_default_project_id_fkey(id,name,code,status)')
+    .not('default_project_id', 'is', null)
+    .order('name')
+    .limit(500);
+  if (error) return json({ error: 'Registration options are temporarily unavailable.' }, 503);
+  const teams = (data ?? []).flatMap((team: Record<string, unknown>) => {
+    const related = team.projects;
+    const project = Array.isArray(related) ? related[0] : related;
+    if (!project || typeof project !== 'object') return [];
+    const item = project as Record<string, unknown>;
+    if (!['planning', 'active'].includes(String(item.status))) return [];
+    return [{ id: team.id, name: team.name, project_id: team.default_project_id, project_name: item.name, project_code: item.code }];
   });
-  if (error || !data.user) {
-    await admin.from('employee_registration_codes').update({ status: 'issued', reserved_at: null }).eq('user_id', userId).eq('status', 'reserved');
-    return json({ error: 'Registration could not be completed. Check the employee ID or contact your administrator.' }, 400);
+  return json({ teams });
+}
+
+async function register(body: Record<string, unknown>, admin: SupabaseClient) {
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const fullName = typeof body.full_name === 'string' ? body.full_name.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  const teamId = typeof body.team_id === 'string' ? body.team_id : '';
+  const projectId = typeof body.project_id === 'string' ? body.project_id : '';
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || !fullName || fullName.length > 160 ||
+      password.length < 10 || password.length > 128 || !uuidPattern.test(teamId) || !uuidPattern.test(projectId)) {
+    return json({ error: 'Enter your name, a valid email, a password of at least 10 characters, and select a team.' }, 400);
   }
 
-  const { error: claimError } = await admin.from('employee_registration_codes').update({
-    status: 'claimed', reserved_at: null, claimed_by: data.user.id, claimed_at: new Date().toISOString(),
-  }).eq('user_id', userId).eq('status', 'reserved');
-  if (claimError) return json({ error: 'Your account was created but the ID could not be finalized. Contact an administrator.' }, 500);
+  const { data: team, error: teamError } = await admin.from('teams').select('id,default_project_id').eq('id', teamId).maybeSingle();
+  if (teamError) return json({ error: 'The selected team could not be verified.' }, 503);
+  if (!team || team.default_project_id !== projectId) return json({ error: 'Select a team with an available project.' }, 400);
+  const { data: project, error: projectError } = await admin.from('projects').select('id,status').eq('id', projectId).maybeSingle();
+  if (projectError || !project) return json({ error: 'The selected project could not be verified.' }, 400);
+  if (!['planning', 'active'].includes(project.status)) return json({ error: 'Applications are only open for planning or active projects.' }, 400);
 
-  if (code.role_id) {
-    const { error: roleError } = await admin.from('profile_roles').insert({ profile_id: data.user.id, role_id: code.role_id });
-    if (roleError) return json({ error: 'Your account was created but its role needs administrator setup.' }, 500);
+  const { data: existingApplication, error: existingApplicationError } = await admin.from('employee_registration_requests')
+    .select('id,status').eq('email', email).neq('status', 'rejected').maybeSingle();
+  if (existingApplicationError) return json({ error: 'Registration is temporarily unavailable. Apply again later.' }, 503);
+  if (existingApplication) return json({ error: 'An application for this email is already in progress or has been approved.' }, 409);
+  const { data: activeId, error: activeIdError } = await admin.from('employee_registration_codes').select('user_id')
+    .eq('email', email).in('status', ['issued', 'reserved', 'claimed']).maybeSingle();
+  if (activeIdError) return json({ error: 'Registration is temporarily unavailable. Apply again later.' }, 503);
+  if (activeId) return json({ error: 'An employee account or invitation already exists for this email. Contact your administrator.' }, 409);
+
+  const { data: authResult, error: authError } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: false,
+    user_metadata: { full_name: fullName },
+  });
+  if (authError || !authResult.user) {
+    console.error('Registration Auth user creation failed', authError?.message ?? 'no user returned');
+    return json({ error: 'Could not submit registration. An account may already exist for this email.' }, 409);
   }
 
-  const { data: signIn, error: signInError } = await publicAuth.auth.signInWithPassword({ email: code.email, password });
-  if (signInError || !signIn.session) return json({ error: 'Your account was created. Sign in with your employee ID and password.' }, 201);
-  return json({ registered: true, session: {
-    access_token: signIn.session.access_token, refresh_token: signIn.session.refresh_token,
-  } }, 201);
+  const { error: deactivateError } = await admin.from('profiles').update({ is_active: false }).eq('id', authResult.user.id);
+  if (deactivateError) {
+    await admin.auth.admin.deleteUser(authResult.user.id);
+    console.error('Pending registration profile could not be restricted', deactivateError.message);
+    return json({ error: 'Could not safely submit the registration request. Try again later.' }, 500);
+  }
+
+  const { error: requestError } = await admin.from('employee_registration_requests').insert({
+    user_id: authResult.user.id, email, full_name: fullName, team_id: teamId, project_id: projectId,
+  });
+  if (requestError) {
+    await admin.auth.admin.deleteUser(authResult.user.id);
+    if (requestError.code === '23505') return json({ error: 'An application for this email is already in progress or has been approved.' }, 409);
+    console.error('Registration request creation failed', requestError.message);
+    return json({ error: 'Could not submit the registration request. Try again later.' }, 500);
+  }
+  return json({ registered: true, status: 'pending_team_approval' }, 201);
+}
+
+async function getCaller(request: Request, url: string, anonKey: string) {
+  const authorization = request.headers.get('Authorization');
+  if (!authorization?.startsWith('Bearer ')) return null;
+  const caller = createClient(url, anonKey, {
+    global: { headers: { Authorization: authorization } },
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data: { user }, error } = await caller.auth.getUser();
+  return error || !user ? null : { caller, user };
+}
+
+async function hasSystemManage(caller: SupabaseClient) {
+  const { data, error } = await caller.rpc('has_permission', { permission_key: 'system.manage' });
+  return !error && data === true;
+}
+
+async function isTeamLead(admin: SupabaseClient, profileId: string, teamId: string) {
+  const { data, error } = await admin.from('team_members').select('profile_id')
+    .eq('team_id', teamId).eq('profile_id', profileId).eq('team_role', 'lead').maybeSingle();
+  return !error && Boolean(data);
+}
+
+async function isProjectManager(admin: SupabaseClient, profileId: string, projectId: string) {
+  const { data, error } = await admin.from('projects').select('id')
+    .eq('id', projectId).eq('manager_id', profileId).maybeSingle();
+  return !error && Boolean(data);
+}
+
+async function listRegistrationRequests(request: Request, url: string, anonKey: string, admin: SupabaseClient) {
+  const context = await getCaller(request, url, anonKey);
+  if (!context) return json({ error: 'Sign in to review employee registrations.' }, 401);
+  const [{ data: teamMemberships, error: teamError }, { data: managedProjects, error: projectError }, superAdmin] = await Promise.all([
+    admin.from('team_members').select('team_id').eq('profile_id', context.user.id).eq('team_role', 'lead'),
+    admin.from('projects').select('id').eq('manager_id', context.user.id),
+    hasSystemManage(context.caller),
+  ]);
+  if (teamError || projectError) return json({ error: 'Registration requests could not be loaded.' }, 503);
+  const teamIds = new Set((teamMemberships ?? []).map((item: { team_id: string }) => item.team_id));
+  const projectIds = new Set((managedProjects ?? []).map((item: { id: string }) => item.id));
+  const { data, error } = await admin.from('employee_registration_requests')
+    .select('id,email,full_name,team_id,project_id,status,team_decision,team_review_comment,team_reviewed_at,project_decision,project_review_comment,project_reviewed_at,employee_id,created_at,teams(name),projects(name,code)')
+    .in('status', ['pending_team_approval','pending_project_approval','approved_pending_id','approved_pending_email'])
+    .order('created_at', { ascending: true }).limit(200);
+  if (error) return json({ error: 'Registration requests could not be loaded.' }, 503);
+  const requests = (data ?? []).filter((item: Record<string, unknown>) => superAdmin || teamIds.has(String(item.team_id)) || projectIds.has(String(item.project_id)));
+  return json({ requests });
+}
+
+async function reviewRegistration(request: Request, body: Record<string, unknown>, url: string, anonKey: string, admin: SupabaseClient) {
+  const context = await getCaller(request, url, anonKey);
+  if (!context) return json({ error: 'Sign in to review employee registrations.' }, 401);
+  const requestId = typeof body.request_id === 'string' ? body.request_id : '';
+  const stage = body.stage === 'team' || body.stage === 'project' ? body.stage : '';
+  const decision = body.decision === 'approve' || body.decision === 'reject' ? body.decision : '';
+  const comment = typeof body.comment === 'string' ? body.comment.trim().slice(0, 800) : '';
+  if (!requestId || !stage || !decision) return json({ error: 'Choose a valid approval stage and decision.' }, 400);
+  const { data: registration, error: requestError } = await admin.from('employee_registration_requests')
+    .select('*').eq('id', requestId).maybeSingle();
+  if (requestError || !registration) return json({ error: 'Registration request not found.' }, 404);
+  const superAdmin = await hasSystemManage(context.caller);
+  const authorized = superAdmin || (stage === 'team'
+    ? await isTeamLead(admin, context.user.id, registration.team_id)
+    : await isProjectManager(admin, context.user.id, registration.project_id));
+  if (!authorized) return json({ error: 'You are not authorized to approve this registration at this stage.' }, 403);
+
+  const expectedStatus = stage === 'team' ? 'pending_team_approval' : 'pending_project_approval';
+  if (registration.status !== expectedStatus || (stage === 'project' && registration.team_decision !== 'approved')) {
+    return json({ error: 'This registration is no longer awaiting your approval.' }, 409);
+  }
+  const approved = decision === 'approve';
+  const patch = stage === 'team'
+    ? { team_decision: approved ? 'approved' : 'rejected', team_reviewed_by: context.user.id,
+        team_reviewed_at: new Date().toISOString(), team_review_comment: comment || null,
+        status: approved ? 'pending_project_approval' : 'rejected' }
+    : { project_decision: approved ? 'approved' : 'rejected', project_reviewed_by: context.user.id,
+        project_reviewed_at: new Date().toISOString(), project_review_comment: comment || null,
+        status: approved ? 'approved_pending_id' : 'rejected' };
+  const { data: updated, error: updateError } = await admin.from('employee_registration_requests')
+    .update(patch).eq('id', requestId).eq('status', expectedStatus).select('*').maybeSingle();
+  if (updateError || !updated) return json({ error: 'The approval could not be saved. Refresh and check the current status.' }, 409);
+
+  if (stage === 'project' && approved) {
+    const result = await finalizeAndEmailEmployeeId(updated, context.user.id, admin);
+    if (result.error) return json({ approved: true, employee_id_pending: true, error: result.error }, 200);
+    return json({ approved: true, employee_id_sent: true, message: 'Both approvals are recorded and the employee ID email was accepted by the email provider.' });
+  }
+  return json({ approved: true, status: updated.status, message: approved ? 'Approval recorded.' : 'Registration rejected.' });
+}
+
+async function issueApprovedEmployeeId(request: Request, body: Record<string, unknown>, url: string, anonKey: string, admin: SupabaseClient) {
+  const context = await getCaller(request, url, anonKey);
+  if (!context) return json({ error: 'Sign in to issue the approved employee ID.' }, 401);
+  const requestId = typeof body.request_id === 'string' ? body.request_id : '';
+  if (!requestId) return json({ error: 'Registration request is required.' }, 400);
+  const { data: registration, error } = await admin.from('employee_registration_requests').select('*').eq('id', requestId).maybeSingle();
+  if (error || !registration) return json({ error: 'Registration request not found.' }, 404);
+  const superAdmin = await hasSystemManage(context.caller);
+  const canReview = superAdmin || await isTeamLead(admin, context.user.id, registration.team_id) || await isProjectManager(admin, context.user.id, registration.project_id);
+  if (!canReview) return json({ error: 'You are not authorized to issue this employee ID.' }, 403);
+  if (!['approved_pending_id', 'approved_pending_email'].includes(registration.status) ||
+      registration.team_decision !== 'approved' || registration.project_decision !== 'approved') {
+    return json({ error: 'Both required approvals must be completed before issuing an employee ID.' }, 409);
+  }
+  const result = await finalizeAndEmailEmployeeId(registration, context.user.id, admin);
+  if (result.error) return json({ error: result.error }, 503);
+  return json({ issued: true, email_sent: true, message: 'The employee ID email was accepted by the email provider.' });
+}
+
+async function finalizeAndEmailEmployeeId(registration: Record<string, any>, actorId: string, admin: SupabaseClient): Promise<{ error?: string }> {
+  const resendKey = Deno.env.get('RESEND_API_KEY');
+  const emailFrom = Deno.env.get('EMPLOYEE_ID_EMAIL_FROM');
+  if (!resendKey || !emailFrom) return { error: 'Both approvals are saved. Configure RESEND_API_KEY and EMPLOYEE_ID_EMAIL_FROM before issuing the employee ID.' };
+  const { data: role, error: roleLookupError } = await admin.from('roles').select('id').eq('name', 'General Staff Member').maybeSingle();
+  if (roleLookupError || !role) return { error: 'Both approvals are saved, but the default General Staff Member role is not configured.' };
+
+  let employeeId = typeof registration.employee_id === 'string' ? registration.employee_id : '';
+  if (!employeeId) {
+    const { data: existing, error: existingError } = await admin.from('employee_registration_codes').select('user_id,status,claimed_by')
+      .eq('email', registration.email).in('status', ['issued','reserved','claimed']).maybeSingle();
+    if (existingError) return { error: 'Could not check for an existing employee ID.' };
+    if (existing) {
+      if (existing.status !== 'claimed' || existing.claimed_by !== registration.user_id) {
+        return { error: 'An employee ID record already exists for this email. Ask an administrator to resolve the existing account.' };
+      }
+      employeeId = existing.user_id;
+    } else {
+      const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      for (let attempt = 0; attempt < 8 && !employeeId; attempt++) {
+        const random = crypto.getRandomValues(new Uint8Array(7));
+        const candidate = Array.from(random, byte => alphabet[byte % alphabet.length]).join('');
+        const { error: codeError } = await admin.from('employee_registration_codes').insert({
+          user_id: candidate, email: registration.email, full_name: registration.full_name,
+          role_id: role.id, status: 'claimed', claimed_by: registration.user_id,
+          claimed_at: new Date().toISOString(), created_by: actorId,
+        });
+        if (!codeError) employeeId = candidate;
+        else if (codeError.code === '23505') {
+          const { data: racedCode, error: racedLookupError } = await admin.from('employee_registration_codes')
+            .select('user_id,status,claimed_by').eq('email', registration.email)
+            .in('status', ['issued','reserved','claimed']).maybeSingle();
+          if (racedLookupError) return { error: 'Could not resolve a concurrent employee ID request.' };
+          if (racedCode?.status === 'claimed' && racedCode.claimed_by === registration.user_id) employeeId = racedCode.user_id;
+          else if (racedCode) return { error: 'An employee ID record already exists for this email. Ask an administrator to resolve it.' };
+        } else {
+          console.error('Approved employee ID creation failed', codeError.message);
+          return { error: 'Both approvals are saved, but the employee ID could not be created.' };
+        }
+      }
+      if (!employeeId) return { error: 'Could not generate a unique employee ID. Retry the issue action.' };
+    }
+  }
+
+  const { error: roleError } = await admin.from('profile_roles').upsert({ profile_id: registration.user_id, role_id: role.id });
+  if (roleError) return { error: 'Employee ID exists, but the default role assignment needs repair before sending.' };
+  const { error: teamError } = await admin.from('team_members').upsert(
+    { team_id: registration.team_id, profile_id: registration.user_id, team_role: 'member' },
+    { onConflict: 'team_id,profile_id' },
+  );
+  if (teamError) return { error: 'Employee ID exists, but team assignment needs repair before sending.' };
+  const { error: projectError } = await admin.from('project_members').upsert(
+    { project_id: registration.project_id, profile_id: registration.user_id, access_level: 'member' },
+    { onConflict: 'project_id,profile_id' },
+  );
+  if (projectError) return { error: 'Employee ID exists, but project assignment needs repair before sending.' };
+
+  const { error: profileActivationError } = await admin.from('profiles').update({ is_active: true }).eq('id', registration.user_id);
+  if (profileActivationError) return { error: 'Employee ID exists, but the employee profile could not be activated.' };
+
+  const { error: profileError } = await admin.from('employee_registration_requests').update({
+    employee_id: employeeId, status: 'approved_pending_email',
+  }).eq('id', registration.id).in('status', ['approved_pending_id','approved_pending_email']);
+  if (profileError) return { error: 'Employee ID exists, but the application could not be updated for delivery.' };
+  const { error: activateError } = await admin.auth.admin.updateUserById(registration.user_id, { email_confirm: true });
+  if (activateError) {
+    console.error('Approved account activation failed', activateError.message);
+    return { error: 'Employee ID exists, but the employee account could not be activated. Retry after checking Auth.' };
+  }
+
+  const appOrigin = Deno.env.get('APP_ORIGIN');
+  const loginUrl = appOrigin && appOrigin !== '*' ? `${appOrigin.replace(/\/$/, '')}/login` : 'the organization sign-in page';
+  const safeName = escapeHtml(String(registration.full_name));
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: emailFrom,
+      to: [registration.email],
+      subject: 'Your Fieldnote employee ID',
+      text: `Hello ${registration.full_name},\n\nYour registration has been approved. Your employee ID is ${employeeId}.\n\nUse this ID with the password you created to sign in at ${loginUrl}. Keep your employee ID private.`,
+      html: `<p>Hello ${safeName},</p><p>Your registration has been approved.</p><p>Your employee ID is <strong>${employeeId}</strong>.</p><p>Use this ID with the password you created to sign in at <a href="${escapeHtml(loginUrl)}">Fieldnote</a>. Keep your employee ID private.</p>`,
+    }),
+  });
+  if (!response.ok) {
+    console.error('Employee ID email delivery failed', response.status, (await response.text()).slice(0, 500));
+    return { error: 'The employee ID was created but the email could not be sent. Retry the email action after checking the email provider.' };
+  }
+  const { error: sentUpdateError } = await admin.from('employee_registration_requests').update({
+    status: 'approved', employee_id_email_sent_at: new Date().toISOString(),
+  }).eq('id', registration.id).eq('status', 'approved_pending_email');
+  if (sentUpdateError) return { error: 'The employee ID email was sent, but delivery status could not be saved. Refresh before retrying.' };
+  return {};
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] ?? character);
 }
 
 async function login(body: Record<string, unknown>, publicAuth: SupabaseClient, admin: SupabaseClient) {
