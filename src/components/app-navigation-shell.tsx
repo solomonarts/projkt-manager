@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   FileBarChart2, FileText, Flag, FolderKanban, LayoutDashboard, ListTodo,
-  ShieldCheck, Target, Users, WalletCards,
+  ShieldCheck, Target, Users, WalletCards, MoreHorizontal,
 } from 'lucide-react';
 import { signOut } from '@/app/auth-actions';
 
@@ -39,6 +39,7 @@ export default function AppNavigationShell({ children }: { children: React.React
   const pathname = usePathname() || '/';
   const [navigation, setNavigation] = useState<NavigationData | null>(null);
   const [hash, setHash] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isAuthPage = publicPaths.includes(pathname);
 
   useEffect(() => {
@@ -53,13 +54,20 @@ export default function AppNavigationShell({ children }: { children: React.React
   }, [isAuthPage, pathname]);
 
   useEffect(() => {
-    const updateHash = () => setHash(window.location.hash);
+    const updateHash = () => { setHash(window.location.hash); setMobileMenuOpen(false); };
     updateHash();
     window.addEventListener('hashchange', updateHash);
     return () => window.removeEventListener('hashchange', updateHash);
   }, [pathname]);
 
+  useEffect(() => { setMobileMenuOpen(false); }, [pathname]);
+
   if (isAuthPage) return <>{children}</>;
+
+  const allItems = groups.flatMap(group => group.items).filter(item => navigation?.permissions[item.permission]);
+  const mobilePriority = ['/', '/projects', '/tasks', '/reports', '/meal'];
+  const mobileItems = mobilePriority.map(path => allItems.find(item => item.href.split('#')[0] === path)).filter((item): item is typeof allItems[number] => !!item).slice(0, 4);
+  const mobileMoreItems = allItems.filter(item => !mobileItems.includes(item));
 
   return <div className="global-app-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
@@ -98,6 +106,16 @@ export default function AppNavigationShell({ children }: { children: React.React
         </div>
       </div>
     </aside>
+    <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
+      {mobileItems.map(({label,href,icon:Icon}) => <a key={label} href={href} aria-current={pathname===href|| (href!=='/'&&pathname.startsWith(`${href}/`))?'page':undefined}>
+        <Icon size={19} strokeWidth={1.8}/><span>{label==='Tasks & Activities'?'Tasks':label==='MEAL & Evaluation'?'MEAL':label}</span>
+      </a>)}
+      <button type="button" aria-expanded={mobileMenuOpen} aria-controls="mobile-more-menu" onClick={()=>setMobileMenuOpen(value=>!value)}><MoreHorizontal size={20}/><span>More</span></button>
+    </nav>
+    {mobileMenuOpen&&<div className="mobile-more-menu" id="mobile-more-menu">
+      {mobileMoreItems.map(({label,href,icon:Icon})=><a key={label} href={href}><Icon size={17}/>{label}</a>)}
+      <form action={signOut}><button type="submit">Sign out</button></form>
+    </div>}
     <div className="global-app-main" id="main-content">{children}</div>
   </div>;
 }

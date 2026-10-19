@@ -12,7 +12,7 @@ export default async function ReportsPage(){
     [create,submit,review,compile]=await Promise.all([hasPermission('reports.create'),hasPermission('reports.submit'),hasPermission('reports.review'),hasPermission('reports.compile')]);
     const supabase=await createClient();const auth=await supabase.auth.getUser();userId=auth.data.user?.id??'';
     const results=await Promise.all([
-      supabase.from('reports').select('id,title,report_type,status,verified,period_start,period_end,submission_date,achievements,challenges,author_id,team_id,project_id,profiles(full_name),teams(name),projects(name,code),report_attachments(id,file_name,storage_path),report_reviews(id,decision,comment,created_at)').order('created_at',{ascending:false}).limit(200),
+      supabase.from('reports').select('id,title,report_type,status,verified,period_start,period_end,submission_date,achievements,challenges,author_id,team_id,project_id,profiles!reports_author_id_fkey(full_name),teams(name),projects(name,code),report_attachments(id,file_name,storage_path),report_reviews(id,decision,comment,created_at)').order('created_at',{ascending:false}).limit(200),
       supabase.from('projects').select('id,name,code').order('name'),
       supabase.from('teams').select('id,name').order('name'),
       supabase.from('tasks').select('id,title').order('title'),
