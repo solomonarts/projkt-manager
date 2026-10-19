@@ -26,7 +26,7 @@ const statusText: Record<string, string> = {
   pending_assignment: 'Awaiting review routing',
   pending_team_approval: 'Awaiting team lead',
   pending_project_approval: 'Awaiting project manager',
-  approved_pending_id: 'Approved · ID not sent',
+  approved_pending_id: 'Approved · setup pending',
   approved_pending_email: 'Approved · email needs retry',
 };
 
@@ -78,7 +78,7 @@ export default function RegistrationApprovalInbox({ embedded = false }: { embedd
       body: { action: 'review_registration', request_id: item.id, stage, decision, comment: comments[item.id] ?? '' },
     });
     if (invokeError) setError(data?.error ?? 'The review could not be saved.');
-    else if (data?.error && !data?.approved) setError(data.error);
+    else if (data?.error) setError(data.approved ? `${data.error} The approval itself is saved.` : data.error);
     else setNotice(data?.error ?? data?.message ?? 'Review saved.');
     await loadRequests();
     setBusyId('');
@@ -96,7 +96,7 @@ export default function RegistrationApprovalInbox({ embedded = false }: { embedd
   }
 
   const inbox = <>
-      {!embedded && <div className="workspace-heading"><div><span className="workspace-kicker">EMPLOYEE ONBOARDING</span><h1>Registration approvals</h1><p>Applications without a selected team need a team and project chosen for review routing. Both team lead and project manager approval are required before account roles, memberships and employee ID are issued.</p></div><UserRoundCheck size={22}/></div>}
+      {!embedded && <div className="workspace-heading"><div><span className="workspace-kicker">EMPLOYEE ONBOARDING</span><h1>Registration approvals</h1><p>Applications without a selected team need a team and project chosen for review routing. An employee ID is created on the first approval; both required approvals are still needed before account access and memberships activate.</p></div><UserRoundCheck size={22}/></div>}
       {error && <div className="workspace-message" role="alert">{error}</div>}
       {notice && <div className="workspace-message registration-notice" role="status">{notice}</div>}
       <section className="registration-request-list" aria-label="Registration requests" aria-busy={loading}>
@@ -111,13 +111,14 @@ export default function RegistrationApprovalInbox({ embedded = false }: { embedd
             return <article className="workspace-panel registration-request" key={item.id}>
               <div className="registration-request-head"><div><h2>{item.full_name}</h2><p>{item.email}</p></div><span className={`workspace-status ${item.status.includes('pending') ? 'open' : 'approved'}`}>{statusText[item.status] ?? item.status}</span></div>
               <dl className="registration-facts"><div><dt>Team</dt><dd>{team?.name ?? 'Not assigned'}</dd></div><div><dt>Project</dt><dd>{project ? `${project.code ? `${project.code} · ` : ''}${project.name}` : 'Not assigned'}</dd></div><div><dt>Applied</dt><dd>{new Date(item.created_at).toLocaleDateString('en-UG', { timeZone: 'Africa/Kampala', year: 'numeric', month: 'short', day: 'numeric' })}</dd></div></dl>
+              {item.employee_id && !pendingEmail && <div className="registration-id-saved" role="status"><b>Employee ID assigned:</b> <code>{item.employee_id}</code><span>Saved. Account access activates after the remaining approval.</span></div>}
               {pendingAssignment && <div className="registration-review-controls"><label>Choose team and project for approval routing<select value={selectedTeams[item.id] ?? ''} onChange={event => setSelectedTeams(current => ({ ...current, [item.id]: event.target.value }))}><option value="">Select a team</option>{teams.map(option => <option key={option.id} value={option.id}>{option.name} · {option.project_code} {option.project_name}</option>)}</select></label><button className="workspace-primary" disabled={busyId === item.id || !selectedTeams[item.id]} onClick={() => void assign(item)}>{busyId === item.id ? 'Saving…' : 'Route for approval'}</button></div>}
               {(item.team_review_comment || item.project_review_comment) && <div className="registration-review-history">{item.team_review_comment && <p><b>Team review:</b> {item.team_review_comment}</p>}{item.project_review_comment && <p><b>Project review:</b> {item.project_review_comment}</p>}</div>}
               {(pendingTeam || pendingProject) && <div className="registration-review-controls">
                 <label>Review note<textarea value={comments[item.id] ?? ''} onChange={event => setComments(current => ({ ...current, [item.id]: event.target.value }))} rows={2} maxLength={800} placeholder="Optional approval note; explain a rejection." /></label>
                 <div><button className="workspace-primary" disabled={busyId === item.id} onClick={() => void decide(item, pendingTeam ? 'team' : 'project', 'approve')}><Check size={15}/> Approve</button><button className="registration-reject" disabled={busyId === item.id} onClick={() => void decide(item, pendingTeam ? 'team' : 'project', 'reject')}><X size={15}/> Reject</button></div>
               </div>}
-              {pendingEmail && <div className="registration-review-controls"><p>Both approvals are complete. {item.employee_id ? `Employee ID ${item.employee_id} is ready for delivery.` : 'Create the employee ID and send it to the applicant.'}</p><button className="workspace-primary" disabled={busyId === item.id} onClick={() => void sendId(item)}><Mail size={15}/>{busyId === item.id ? 'Sending…' : 'Create / resend employee ID email'}</button></div>}
+              {pendingEmail && <div className="registration-review-controls"><p>Both approvals are complete. {item.employee_id ? <>Employee ID <code>{item.employee_id}</code> is saved{item.status === 'approved_pending_email' ? '; email delivery can be retried.' : ' and ready for delivery.'}</> : 'Create the employee ID and send it to the applicant.'}</p><button className="workspace-primary" disabled={busyId === item.id} onClick={() => void sendId(item)}><Mail size={15}/>{busyId === item.id ? 'Sending…' : 'Create / resend employee ID email'}</button></div>}
             </article>;
           }) : <div className="workspace-empty"><UserRoundCheck size={23}/><b>No applications to review</b><span>New applications for your teams or projects will appear here.</span></div>}
       </section>

@@ -101,6 +101,7 @@ select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:3px
 @media(max-width:650px){.meal-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.meal-followup-list article{display:grid}.meal-followup-form{width:100%}.meal-indicator-heading,.meal-evaluation-head{flex-direction:column}.meal-risk-matrix>div{height:41px}}
 @media(max-width:700px){.admin-permission-form fieldset>div{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-role>summary small{margin-left:0}}
 @media(max-width:430px){.admin-permission-form fieldset>div{grid-template-columns:1fr}}
+.registration-id-saved{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:14px;padding:10px 12px;border:1px solid #dcece0;border-radius:8px;background:#f3f8f4;color:#47765a;font-size:11px}.registration-id-saved code,.registration-review-controls code{padding:3px 6px;border-radius:5px;background:#fff;color:#34323f;font:700 12px ui-monospace,monospace;letter-spacing:.08em}.registration-id-saved span{color:#6b7f70;font-size:10px}
 
 /* Touch first navigation and safe content spacing for narrow screens. */
 .mobile-bottom-nav,.mobile-more-menu{display:none}

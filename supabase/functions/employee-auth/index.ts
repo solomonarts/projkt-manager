@@ -299,10 +299,19 @@ async function reviewRegistration(request: Request, body: Record<string, unknown
     .update(patch).eq('id', requestId).eq('status', expectedStatus).select('*').maybeSingle();
   if (updateError || !updated) return json({ error: 'The approval could not be saved. Refresh and check the current status.' }, 409);
 
-  if (stage === 'project' && approved) {
-    const result = await finalizeAndEmailEmployeeId(updated, context.user.id, admin);
-    if (result.error) return json({ approved: true, employee_id_pending: true, error: result.error }, 200);
-    return json({ approved: true, employee_id_sent: true, message: 'Both approvals are recorded and the employee ID email was accepted by the email provider.' });
+  if (approved) {
+    const issued = await ensureRegistrationEmployeeId(updated, context.user.id, admin);
+    if (issued.error || !issued.employeeId) {
+      return json({ approved: true, employee_id_pending: true, error: issued.error ?? 'The approval was saved, but the employee ID could not be created.' }, 200);
+    }
+    updated.employee_id = issued.employeeId;
+
+    if (stage === 'project') {
+      const result = await finalizeAndEmailEmployeeId(updated, context.user.id, admin);
+      if (result.error) return json({ approved: true, employee_id: issued.employeeId, employee_id_sent: false, error: result.error }, 200);
+      return json({ approved: true, employee_id: issued.employeeId, employee_id_sent: true, message: `Both approvals are recorded. Employee ID ${issued.employeeId} was saved and its email was accepted by the email provider.` });
+    }
+    return json({ approved: true, employee_id: issued.employeeId, status: updated.status, message: `Approval recorded. Employee ID ${issued.employeeId} is saved; account access will activate after the remaining approval.` });
   }
   return json({ approved: true, status: updated.status, message: approved ? 'Approval recorded.' : 'Registration rejected.' });
 }
@@ -319,7 +328,7 @@ async function issueApprovedEmployeeId(request: Request, body: Record<string, un
   if (!canReview) return json({ error: 'You are not authorized to issue this employee ID.' }, 403);
   if (!['approved_pending_id', 'approved_pending_email'].includes(registration.status) ||
       registration.team_decision !== 'approved' || registration.project_decision !== 'approved') {
-    return json({ error: 'Both required approvals must be completed before issuing an employee ID.' }, 409);
+    return json({ error: 'Both required approvals must be completed before activating the account and sending the employee ID email.' }, 409);
   }
   const result = await finalizeAndEmailEmployeeId(registration, context.user.id, admin);
   if (result.error) return json({ error: result.error }, 503);
@@ -328,50 +337,13 @@ async function issueApprovedEmployeeId(request: Request, body: Record<string, un
 
 async function finalizeAndEmailEmployeeId(registration: Record<string, any>, actorId: string, admin: SupabaseClient): Promise<{ error?: string }> {
   if (!registration.team_id || !registration.project_id || registration.team_decision !== 'approved' || registration.project_decision !== 'approved') {
-    return { error: 'Assign a team and project, then record both approvals before issuing an employee ID.' };
+    return { error: 'Assign a team and project, then record both approvals before activating the account and sending the employee ID email.' };
   }
-  const resendKey = Deno.env.get('RESEND_API_KEY');
-  const emailFrom = Deno.env.get('EMPLOYEE_ID_EMAIL_FROM');
-  if (!resendKey || !emailFrom) return { error: 'Both approvals are saved. Configure RESEND_API_KEY and EMPLOYEE_ID_EMAIL_FROM before issuing the employee ID.' };
+  const issued = await ensureRegistrationEmployeeId(registration, actorId, admin);
+  if (issued.error || !issued.employeeId) return { error: issued.error ?? 'The employee ID could not be created.' };
+  const employeeId = issued.employeeId;
   const { data: role, error: roleLookupError } = await admin.from('roles').select('id').eq('name', 'General Staff Member').maybeSingle();
-  if (roleLookupError || !role) return { error: 'Both approvals are saved, but the default General Staff Member role is not configured.' };
-
-  let employeeId = typeof registration.employee_id === 'string' ? registration.employee_id : '';
-  if (!employeeId) {
-    const { data: existing, error: existingError } = await admin.from('employee_registration_codes').select('user_id,status,claimed_by')
-      .eq('email', registration.email).in('status', ['issued','reserved','claimed']).maybeSingle();
-    if (existingError) return { error: 'Could not check for an existing employee ID.' };
-    if (existing) {
-      if (existing.status !== 'claimed' || existing.claimed_by !== registration.user_id) {
-        return { error: 'An employee ID record already exists for this email. Ask an administrator to resolve the existing account.' };
-      }
-      employeeId = existing.user_id;
-    } else {
-      const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      for (let attempt = 0; attempt < 8 && !employeeId; attempt++) {
-        const random = crypto.getRandomValues(new Uint8Array(7));
-        const candidate = Array.from(random, byte => alphabet[byte % alphabet.length]).join('');
-        const { error: codeError } = await admin.from('employee_registration_codes').insert({
-          user_id: candidate, email: registration.email, full_name: registration.full_name,
-          role_id: role.id, status: 'claimed', claimed_by: registration.user_id,
-          claimed_at: new Date().toISOString(), created_by: actorId,
-        });
-        if (!codeError) employeeId = candidate;
-        else if (codeError.code === '23505') {
-          const { data: racedCode, error: racedLookupError } = await admin.from('employee_registration_codes')
-            .select('user_id,status,claimed_by').eq('email', registration.email)
-            .in('status', ['issued','reserved','claimed']).maybeSingle();
-          if (racedLookupError) return { error: 'Could not resolve a concurrent employee ID request.' };
-          if (racedCode?.status === 'claimed' && racedCode.claimed_by === registration.user_id) employeeId = racedCode.user_id;
-          else if (racedCode) return { error: 'An employee ID record already exists for this email. Ask an administrator to resolve it.' };
-        } else {
-          console.error('Approved employee ID creation failed', codeError.message);
-          return { error: 'Both approvals are saved, but the employee ID could not be created.' };
-        }
-      }
-      if (!employeeId) return { error: 'Could not generate a unique employee ID. Retry the issue action.' };
-    }
-  }
+  if (roleLookupError || !role) return { error: `Employee ID ${employeeId} is saved, but the default General Staff Member role is not configured.` };
 
   const { error: roleError } = await admin.from('profile_roles').upsert({ profile_id: registration.user_id, role_id: role.id });
   if (roleError) return { error: 'Employee ID exists, but the default role assignment needs repair before sending.' };
@@ -399,6 +371,10 @@ async function finalizeAndEmailEmployeeId(registration: Record<string, any>, act
     return { error: 'Employee ID exists, but the employee account could not be activated. Retry after checking Auth.' };
   }
 
+  const resendKey = Deno.env.get('RESEND_API_KEY');
+  const emailFrom = Deno.env.get('EMPLOYEE_ID_EMAIL_FROM');
+  if (!resendKey || !emailFrom) return { error: `Employee ID ${employeeId} is saved and the account is approved, but email delivery is not configured.` };
+
   const appOrigin = Deno.env.get('APP_ORIGIN');
   const loginUrl = appOrigin && appOrigin !== '*' ? `${appOrigin.replace(/\/$/, '')}/login` : 'the organization sign-in page';
   const safeName = escapeHtml(String(registration.full_name));
@@ -422,6 +398,50 @@ async function finalizeAndEmailEmployeeId(registration: Record<string, any>, act
   }).eq('id', registration.id).eq('status', 'approved_pending_email');
   if (sentUpdateError) return { error: 'The employee ID email was sent, but delivery status could not be saved. Refresh before retrying.' };
   return {};
+}
+
+async function ensureRegistrationEmployeeId(registration: Record<string, any>, actorId: string, admin: SupabaseClient): Promise<{ employeeId?: string; error?: string }> {
+  const { data: existing, error: existingError } = await admin.from('employee_registration_codes').select('user_id,status,claimed_by')
+    .eq('email', registration.email).in('status', ['issued','reserved','claimed']).maybeSingle();
+  if (existingError) return { error: 'Could not check for an existing employee ID.' };
+
+  let employeeId = '';
+  if (existing) {
+    if (existing.status !== 'claimed' || existing.claimed_by !== registration.user_id) {
+      return { error: 'An employee ID record already exists for this email. Ask an administrator to resolve the existing account.' };
+    }
+    employeeId = existing.user_id;
+  } else {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    for (let attempt = 0; attempt < 8 && !employeeId; attempt++) {
+      const random = crypto.getRandomValues(new Uint8Array(7));
+      const candidate = attempt === 0 && typeof registration.employee_id === 'string' && idPattern.test(registration.employee_id)
+        ? registration.employee_id
+        : Array.from(random, byte => alphabet[byte % alphabet.length]).join('');
+      const { error: codeError } = await admin.from('employee_registration_codes').insert({
+        user_id: candidate, email: registration.email, full_name: registration.full_name,
+        status: 'claimed', claimed_by: registration.user_id, claimed_at: new Date().toISOString(), created_by: actorId,
+      });
+      if (!codeError) employeeId = candidate;
+      else if (codeError.code === '23505') {
+        const { data: racedCode, error: racedLookupError } = await admin.from('employee_registration_codes')
+          .select('user_id,status,claimed_by').eq('email', registration.email)
+          .in('status', ['issued','reserved','claimed']).maybeSingle();
+        if (racedLookupError) return { error: 'Could not resolve a concurrent employee ID request.' };
+        if (racedCode?.status === 'claimed' && racedCode.claimed_by === registration.user_id) employeeId = racedCode.user_id;
+        else if (racedCode) return { error: 'An employee ID record already exists for this email. Ask an administrator to resolve it.' };
+      } else {
+        console.error('Approved employee ID creation failed', codeError.message);
+        return { error: 'Approval was saved, but the employee ID could not be created.' };
+      }
+    }
+    if (!employeeId) return { error: 'Could not generate a unique employee ID. Retry the approval.' };
+  }
+
+  const { error: saveError } = await admin.from('employee_registration_requests')
+    .update({ employee_id: employeeId }).eq('id', registration.id).neq('status', 'rejected');
+  if (saveError) return { error: 'The employee ID record exists, but it could not be attached to the application. Retry the approval.' };
+  return { employeeId };
 }
 
 function escapeHtml(value: string) {

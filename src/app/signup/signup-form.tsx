@@ -52,8 +52,8 @@ export default function SignupForm() {
       });
       if (invokeError || !data?.registered) throw new Error(data?.error ?? 'Registration could not be submitted. Try again later.');
       setMessage(selectedTeam
-        ? 'Application submitted. Your team lead and project manager must approve it. Your employee ID will be sent to this email after both approvals.'
-        : 'Application submitted without a team. A team leader or project manager will assign a team and project before the approval steps. Your employee ID will be emailed after approval.');
+        ? 'Application submitted. Your employee ID will be created and saved after the first approval, then emailed after both approvals. Your account is activated after both approvals.'
+        : 'Application submitted without a team. A team leader or project manager will assign a team and project before the approval steps. Your employee ID will be created and saved after the first approval, then emailed after both approvals.');
       formElement.reset();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Registration could not be submitted.');
