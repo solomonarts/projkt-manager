@@ -60,6 +60,23 @@ export default function AppNavigationShell({ children }: { children: React.React
     return () => window.removeEventListener('hashchange', updateHash);
   }, [pathname]);
 
+  useEffect(() => {
+    const addMobileLabels = () => {
+      document.querySelectorAll<HTMLTableElement>('.workspace-table, .project-table').forEach(table => {
+        const headings = Array.from(table.querySelectorAll('thead th')).map(heading => heading.textContent?.trim() ?? '');
+        table.querySelectorAll<HTMLTableRowElement>('tbody tr').forEach(row => {
+          Array.from(row.cells).forEach((cell, index) => {
+            if (headings[index]) cell.setAttribute('data-label', headings[index]);
+          });
+        });
+      });
+    };
+    addMobileLabels();
+    const observer = new MutationObserver(addMobileLabels);
+    observer.observe(document.getElementById('main-content') ?? document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [pathname]);
+
   useEffect(() => { setMobileMenuOpen(false); }, [pathname]);
 
   if (isAuthPage) return <>{children}</>;
