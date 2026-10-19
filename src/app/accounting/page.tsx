@@ -30,7 +30,7 @@ export default async function AccountingPage() {
     }
   } catch { error='Sign in and configure Supabase to access the accounting workspace.'; }
   return <div className="workspace-page accounting-page">
-    <header className="workspace-top"><span>FIELDNOTE / ACCOUNTING &amp; REPORTING</span></header>
+    <header className="workspace-top"><span>VAI PROJECT MANAGER / ACCOUNTING &amp; REPORTING</span></header>
     <aside className="accounting-nav" aria-label="Accounting navigation"><div className="accounting-brand"><span className="accounting-brand-icon"><Landmark size={18}/></span><span><b>Accounting</b><small>Finance workspace</small></span></div><a className="accounting-nav-link active" href="#overview"><BookOpen size={16}/> Overview</a><a className="accounting-nav-link" href="#journals"><ArrowUpRight size={16}/> Journal entries</a><a className="accounting-nav-link" href="#accounts"><Building2 size={16}/> Chart of accounts</a><a className="accounting-nav-link" href="#reports"><FileBarChart2 size={16}/> Financial reports</a><div className="accounting-nav-foot"><ShieldCheck size={14}/> Access controlled by finance permissions</div></aside>
     <main className="accounting-main" id="overview"><div className="workspace-heading"><div><span className="workspace-kicker">INDEPENDENT FINANCIAL SYSTEM</span><h1>Accounting &amp; Reporting</h1><p>Manage journal activity and financial reporting in a dedicated workspace.</p></div></div>
       {!allowed&&<div className="workspace-message">Your account does not have permission to view accounting records.</div>}{error&&<div className="workspace-message" role="status">{error}</div>}

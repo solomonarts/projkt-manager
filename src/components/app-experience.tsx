@@ -230,7 +230,7 @@ export default function AppExperience() {
     {guideOpen && <div className="app-guide-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeGuide(); }}>
       <section className="app-guide-dialog" role="dialog" aria-modal="true" aria-labelledby="app-guide-title" aria-describedby="app-guide-body">
         <button type="button" className="app-guide-close" onClick={closeGuide} aria-label="Close guide"><X size={18}/></button>
-        <p className="app-guide-kicker">FIELDNOTE · {moduleId.replaceAll('-', ' ').toUpperCase()} · STEP {guideStep + 1} OF {guide.steps.length}</p>
+        <p className="app-guide-kicker">VAI PROJECT MANAGER · {moduleId.replaceAll('-', ' ').toUpperCase()} · STEP {guideStep + 1} OF {guide.steps.length}</p>
         <h2 id="app-guide-title">{guide.title}</h2>
         <div className="app-guide-progress" aria-label={`Step ${guideStep + 1} of ${guide.steps.length}`}>
           {guide.steps.map((item, index) => <i key={item.title} className={index <= guideStep ? 'current' : ''}/>) }

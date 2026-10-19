@@ -123,5 +123,5 @@ export default function RegistrationApprovalInbox({ embedded = false }: { embedd
       </section>
   </>;
   return embedded ? <section className="registration-approval-embedded" aria-label="Registration approvals">{inbox}</section>
-    : <div className="workspace-page"><header className="workspace-top"><span>FIELDNOTE / REGISTRATION APPROVALS</span></header><main className="workspace-content registration-approval-page">{inbox}</main></div>;
+    : <div className="workspace-page"><header className="workspace-top"><span>VAI PROJECT MANAGER / REGISTRATION APPROVALS</span></header><main className="workspace-content registration-approval-page">{inbox}</main></div>;
 }

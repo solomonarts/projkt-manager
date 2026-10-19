@@ -40,8 +40,8 @@ export default function LoginForm() {
 
   return <main className="auth-shell">
     <section className="auth-card" aria-labelledby="login-title">
-      <a className="auth-brand" href="/">fieldnote<span>.</span></a>
-      <p className="auth-kicker">ORGANIZATION WORKSPACE</p>
+      <a className="auth-brand" href="/" aria-label="VAI Project Manager home"><span className="auth-brand-mark">VAI</span><span className="auth-brand-name">Project Manager</span></a>
+      <p className="auth-kicker">VAI PROJECT MANAGER · ORGANIZATION WORKSPACE</p>
       <h1 id="login-title">Sign in</h1>
       <p className="auth-intro">Employees sign in with the 7-character ID issued by their administrator.</p>
       {idleNotice && <p className="auth-notice" role="status">You were signed out after an hour without activity. Sign in to continue.</p>}

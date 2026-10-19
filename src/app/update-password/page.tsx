@@ -4,7 +4,7 @@ import UpdatePasswordForm from './update-password-form';
 export default function UpdatePasswordPage({ searchParams }: { searchParams?: { error?: string } }) {
   const recoveryLinkError = searchParams?.error === 'recovery_link_invalid';
   return <main className="auth-shell"><section className="auth-card" aria-labelledby="update-password-title">
-    <Link className="auth-brand" href="/">fieldnote<span>.</span></Link>
+    <Link className="auth-brand" href="/" aria-label="VAI Project Manager home"><span className="auth-brand-mark">VAI</span><span className="auth-brand-name">Project Manager</span></Link>
     <p className="auth-kicker">ACCOUNT RECOVERY</p>
     <h1 id="update-password-title">Choose a new password</h1>
     <p className="auth-intro">Use at least 10 characters. Open your invitation or reset link in this browser first.</p>

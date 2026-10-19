@@ -408,9 +408,9 @@ async function finalizeAndEmailEmployeeId(registration: Record<string, any>, act
     body: JSON.stringify({
       from: emailFrom,
       to: [registration.email],
-      subject: 'Your Fieldnote employee ID',
+      subject: 'Your VAI Project Manager employee ID',
       text: `Hello ${registration.full_name},\n\nYour registration has been approved. Your employee ID is ${employeeId}.\n\nUse this ID with the password you created to sign in at ${loginUrl}. Keep your employee ID private.`,
-      html: `<p>Hello ${safeName},</p><p>Your registration has been approved.</p><p>Your employee ID is <strong>${employeeId}</strong>.</p><p>Use this ID with the password you created to sign in at <a href="${escapeHtml(loginUrl)}">Fieldnote</a>. Keep your employee ID private.</p>`,
+      html: `<p>Hello ${safeName},</p><p>Your registration has been approved.</p><p>Your employee ID is <strong>${employeeId}</strong>.</p><p>Use this ID with the password you created to sign in at <a href="${escapeHtml(loginUrl)}">VAI Project Manager</a>. Keep your employee ID private.</p>`,
     }),
   });
   if (!response.ok) {

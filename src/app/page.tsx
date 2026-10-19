@@ -85,7 +85,7 @@ export default function Home() {
 
           <div className="panel activity-panel"><div className="panel-head"><div><h2>Recent activity</h2><p>Recent visible task and report updates</p></div></div><div className="activity-list">{dashboard?.recent.map(item=><a className="activity-row" key={`${item.href}-${item.id}`} href={item.href}><span className={`activity-icon ${item.tone}`}><Activity size={14}/></span><span className="activity-copy"><span>{item.title}</span><small>{item.project} · {item.when}</small></span></a>)}{!dashboardLoading&&!dashboard?.recent.length&&<div className="empty-state">No recent activity is available.</div>}</div><a className="activity-footer" href="/reports">Open reports <ArrowRight size={14} /></a></div></div>
         </section>
-        <footer className="page-footer"><span>Fieldnote organization workspace</span><span><ShieldCheck size={13} /> Your data is protected</span></footer>
+        <footer className="page-footer"><span>VAI Project Manager workspace</span><span><ShieldCheck size={13} /> Your data is protected</span></footer>
       </div>
     </main>
   </div>;

@@ -50,23 +50,34 @@
   align-items: center;
   gap: 10px;
   font-family: var(--display);
-  font-size: 21px;
+  color: #282633;
+  text-decoration: none;
+  font-size: 19px;
   font-weight: 800;
-  letter-spacing: -1.1px;
+  letter-spacing: -.7px;
 }
 
 .auth-brand::before {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  background: #7765bd;
-  box-shadow: 11px 0 #a99cda, 0 11px #9484ce, 11px 11px #4f9679;
-  content: "";
-  transform: rotate(-7deg);
+  display: none;
 }
 
-.auth-brand span {
-  color: #7967c8;
+.auth-brand-mark {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: linear-gradient(145deg,#806fc9,#5d4c9f);
+  box-shadow: 0 4px 10px #6755a32e;
+  color: #fff;
+  font: 800 13px var(--display);
+  letter-spacing: -.4px;
+}
+
+.auth-brand-name {
+  color: #282633;
+  white-space: nowrap;
 }
 
 .auth-kicker {

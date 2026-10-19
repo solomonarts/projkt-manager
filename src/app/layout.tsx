@@ -5,8 +5,8 @@ import AppExperience from '@/components/app-experience';
 import AppNavigationShell from '@/components/app-navigation-shell';
 
 export const metadata: Metadata = {
-  title: 'Fieldnote — Project intelligence',
-  description: 'Plan, monitor and learn from every project.',
+  title: 'VAI Project Manager',
+  description: 'Plan, monitor and manage every project with VAI Project Manager.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

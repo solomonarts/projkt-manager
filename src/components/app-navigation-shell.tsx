@@ -89,9 +89,9 @@ export default function AppNavigationShell({ children }: { children: React.React
   return <div className="global-app-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
     <aside className="sidebar global-sidebar" aria-label="Main navigation">
-      <a className="brand" href="/" aria-label="Fieldnote overview">
-        <span className="brand-icon"><span/><span/><span/><span/></span>
-        <span className="brand-name">fieldnote<span className="brand-dot">.</span></span>
+      <a className="brand" href="/" aria-label="VAI Project Manager home">
+        <span className="brand-icon" aria-hidden="true">VAI</span>
+        <span className="brand-name">Project Manager</span>
       </a>
       <div className="org-switcher" aria-label="Organization workspace">
         <span className="org-mark">F</span>
